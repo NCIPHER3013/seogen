@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบนำเข้าคีย์เวิร์ดอัตโนมัติ - SEOGEN</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #8b5cf6;
+      --primary-hover: #7c3aed;
+      --primary-light: rgba(139, 92, 246, 0.1);
+      --bg: #090d16;
+      --card-bg: rgba(17, 24, 39, 0.7);
+      --border: rgba(255, 255, 255, 0.08);
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+      --success: #10b981;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Outfit', 'Sarabun', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, var(--bg) 70%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 2rem 1rem;
+      overflow-x: hidden;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 900px;
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 2.5rem;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      position: relative;
+      animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .glow {
+      position: absolute;
+      width: 200px;
+      height: 200px;
+      background: var(--primary);
+      filter: blur(120px);
+      border-radius: 50%;
+      z-index: -1;
+      opacity: 0.3;
+    }
+
+    .glow-1 { top: -50px; left: -50px; }
+    .glow-2 { bottom: -50px; right: -50px; }
+
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .logo-container {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 0.5rem 1rem;
+      border-radius: 100px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      margin-bottom: 1.5rem;
+    }
+
+    .logo-dot {
+      width: 10px;
+      height: 10px;
+      background: var(--primary);
+      border-radius: 50%;
+      box-shadow: 0 0 12px var(--primary);
+    }
+
+    .logo-text {
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    h1 {
+      font-size: 2.25rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fff 30%, #a78bfa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 1rem;
+      font-weight: 300;
+    }
+
+    .table-container {
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      margin-bottom: 2rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    th {
+      background: rgba(255, 255, 255, 0.02);
+      padding: 1rem 1.25rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 1rem 1.25rem;
+      font-size: 0.95rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: #e5e7eb;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.01);
+    }
+
+    .keyword-badge {
+      display: inline-block;
+      background: var(--primary-light);
+      color: #c084fc;
+      padding: 0.25rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      border: 1px solid rgba(192, 132, 252, 0.15);
+    }
+
+    .btn-container {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .btn {
+      font-family: inherit;
+      font-size: 1rem;
+      font-weight: 600;
+      padding: 0.85rem 2.5rem;
+      border-radius: 12px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+      color: white;
+      box-shadow: 0 8px 24px rgba(139, 92, 246, 0.35);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 30px rgba(139, 92, 246, 0.5);
+    }
+
+    .btn-primary:active {
+      transform: translateY(0);
+    }
+
+    /* Modal / Success State Animation */
+    .success-overlay {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(9, 13, 22, 0.95);
+      border-radius: 24px;
+      z-index: 10;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 2rem;
+      backdrop-filter: blur(10px);
+      animation: fadeIn 0.4s ease forwards;
+    }
+
+    .success-icon-wrapper {
+      width: 80px;
+      height: 80px;
+      background: rgba(16, 185, 129, 0.1);
+      border: 2px solid var(--success);
+      border-radius: 50%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      color: var(--success);
+      box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
+      animation: scaleUp 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    }
+
+    @keyframes scaleUp {
+      from { transform: scale(0.6); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    .success-title {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      color: white;
+    }
+
+    .success-desc {
+      color: var(--text-muted);
+      margin-bottom: 2rem;
+      max-width: 450px;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="glow glow-1"></div>
+  <div class="glow glow-2"></div>
+
+  <div class="container">
+    <!-- Success State Screen -->
+    <div id="successOverlay" class="success-overlay">
+      <div class="success-icon-wrapper">
+        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+      </div>
+      <h2 class="success-title">นำเข้าคีย์เวิร์ดสำเร็จ!</h2>
+      <p class="success-desc">
+        คีย์เวิร์ดและชื่อบทความซีลสินค้าทั้งหมด 10 รายการ ได้ถูกบรรจุเข้าสู่ระบบนำเข้าคีย์เวิร์ดเรียบร้อยแล้ว คุณสามารถกลับไปที่หน้าเว็บและรีเฟรชเพื่อเริ่มสร้างบทความได้ทันที
+      </p>
+      <button class="btn btn-primary" onclick="closeSuccess()">
+        ตกลง
+      </button>
+    </div>
+
+    <!-- Main Content -->
+    <header>
+      <div class="logo-container">
+        <div class="logo-dot"></div>
+        <span class="logo-text">z.ai SEO Studio</span>
+      </div>
+      <h1>ระบบนำเข้าคีย์เวิร์ดเครื่องซีล</h1>
+      <p class="subtitle">คีย์เวิร์ดและชื่อบทความระดับพรีเมียมสำหรับการเขียนบทความ SEO เครื่องซีลสินค้า</p>
+    </header>
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 10%;">ลำดับ</th>
+            <th style="width: 35%;">คีย์เวิร์ดนำเข้า</th>
+            <th style="width: 55%;">ชื่อบทความที่แนะนำ</th>
+          </tr>
+        </thead>
+        <tbody id="keywordsTable">
+          <!-- Will be filled by JS -->
+        </tbody>
+      </table>
+    </div>
+
+    <div class="btn-container">
+      <button class="btn btn-primary" id="importBtn">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        นำข้อมูลเข้าเว็บเดี๋ยวนี้
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const dataToImport = [
+      {
+        keyword: "เลือกเครื่องซีลตามธุรกิจ",
+        title: "คู่มือการเลือกเครื่องซีลตามประเภทธุรกิจ ทำให้ใช่ตั้งแต่ครั้งแรก"
+      },
+      {
+        keyword: "เครื่องซีลมือกด",
+        title: "เครื่องซีลมือกด สำหรับการเริ่มต้นธุรกิจ"
+      },
+      {
+        keyword: "เครื่องซีลตั้งโต๊ะเล็ก",
+        title: "การเลือก เครื่องซีลตั้งโต๊ะ ขนาดเล็กสำหรับประหยัดพื้นที่"
+      },
+      {
+        keyword: "เครื่องซีลเบื้องต้น",
+        title: "การเลือก เครื่องซีลเบื้องต้น ควรลงทุนเท่าไหร่"
+      },
+      {
+        keyword: "เครื่องซีล SME",
+        title: "เครื่องซีล SME กับความคุ้มค่าเมื่อธุรกิจโตขึ้น"
+      },
+      {
+        keyword: "เครื่องซีลร้านเบเกอรี่",
+        title: "การเลือก เครื่องซีลร้านเบเกอรี่ สำหรับการคงความสดและกรอบ"
+      },
+      {
+        keyword: "เครื่องซีลสำหรับร้านอาหาร",
+        title: "ความคุ้มค่ากับการเลือก เครื่องซีลสำหรับร้านอาหาร ทั่วไปกับการใช้งานง่าย"
+      },
+      {
+        keyword: "เครื่องซีลเนื้อสัตว์",
+        title: "เครื่องซีลเนื้อสัตว์ สำหรับโรงงานและมาตรฐานในการใช้งาน"
+      },
+      {
+        keyword: "เครื่องซีลอาหารแช่แข็ง",
+        title: "เครื่องซีลอาหารแช่แข็ง สำหรับใช้กับธุรกิจอาหารแช่แข็งเพื่อทนอุณหภูมิต่ำ"
+      },
+      {
+        keyword: "เครื่องซีลสำหรับร้านค้าออนไลน์",
+        title: "เครื่องซีลสำหรับร้านค้าออนไลน์ กับการบรรจุสินค้าให้ปลอดภัย"
+      }
+    ];
+
+    // Populate table
+    const tableBody = document.getElementById('keywordsTable');
+    dataToImport.forEach((item, idx) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${idx + 1}</td>
+        <td><span class="keyword-badge">${item.keyword}</span></td>
+        <td>${item.title}</td>
+      `;
+      tableBody.appendChild(tr);
+    });
+
+    document.getElementById('importBtn').addEventListener('click', () => {
+      // Load current inputs
+      const saved = localStorage.getItem('campaign_inputs');
+      let current = [];
+      if (saved) {
+        try {
+          current = JSON.parse(saved);
+        } catch (e) {
+          current = [];
+        }
+      }
+
+      // Convert data to import to ArticleItem structure
+      const newItems = dataToImport.map((item, index) => ({
+        id: 'seal-' + Date.now() + '-' + index + '-' + Math.floor(Math.random() * 1000),
+        keyword: item.keyword,
+        title: item.title,
+        language: 'Thai'
+      }));
+
+      // Filter out existing duplicates based on keyword
+      const existingKeywords = new Set(current.map(c => c.keyword));
+      const nonDuplicateNewItems = newItems.filter(item => !existingKeywords.has(item.keyword));
+
+      // Append and save
+      const updated = [...current, ...nonDuplicateNewItems];
+      localStorage.setItem('campaign_inputs', JSON.stringify(updated));
+
+      // Show success overlay
+      document.getElementById('successOverlay').style.display = 'flex';
+    });
+
+    function closeSuccess() {
+      document.getElementById('successOverlay').style.display = 'none';
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,117 @@
+import fs from 'fs';
+import path from 'path';
+import { createClient } from '@supabase/supabase-js';
+
+const images = [
+  'hand_sealer_cover_unbranded_1779994818354.png',
+  'hand_sealer_inline1_unbranded_1779994844611.png',
+  'hand_sealer_inline2_unbranded_1779994865102.png',
+  'hand_sealer_inline3_unbranded_1779994882342.png'
+];
+const baseDir = 'C:/Users/User/.gemini/antigravity-ide/brain/6cba0f64-43b4-4bd6-8acd-b37db148fbc7';
+
+async function execute() {
+  const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://jkfyyidrrjenvwdxljze.supabase.co';
+  const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || 'process.env.SUPABASE_SECRET_KEY || ""';
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY);
+  
+  const publicUrls = [];
+  for (const imgName of images) {
+    const fullPath = path.join(baseDir, imgName);
+    const fileBuffer = fs.readFileSync(fullPath);
+    
+    console.log('Uploading ' + imgName + '...');
+    const { data, error } = await supabase.storage
+      .from('articles')
+      .upload(`seo-campaign/${imgName}`, fileBuffer, {
+        contentType: 'image/png',
+        upsert: true
+      });
+      
+    if (error) {
+      console.error('Failed to upload', error);
+      return;
+    }
+    
+    const { data: publicData } = supabase.storage.from('articles').getPublicUrl(`seo-campaign/${imgName}`);
+    publicUrls.push(publicData.publicUrl);
+  }
+  
+  console.log('Uploaded URLs:', publicUrls);
+  
+  const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Update Article 1</title>
+  <style>body { font-family: sans-serif; padding: 2rem; }</style>
+</head>
+<body>
+  <h1>กำลังอัปเดตบทความที่ 1 (เครื่องซีลมือกด)...</h1>
+  <div id="status">กำลังอัปเดต...</div>
+  <script>
+    const newUrls = ${JSON.stringify(publicUrls)};
+    
+    try {
+      const saved = localStorage.getItem('campaign_config_generatedArticles');
+      if (saved) {
+        let articles = JSON.parse(saved);
+        
+        let article1 = articles.find(a => a.keyword === 'เครื่องซีลมือกด สำหรับการเริ่มต้นธุรกิจ' || a.title.includes('เครื่องซีลมือกด'));
+        if (article1) {
+          // Replace content regex matching the old markdown structure
+          // Old structure: ![alt text](gemini_img_...)
+          let updatedContent = article1.content;
+          
+          if (article1.images && article1.images.length >= 4) {
+             updatedContent = updatedContent.replace(new RegExp(article1.images[0].url, 'g'), newUrls[0]);
+             article1.images[0].url = newUrls[0];
+             
+             updatedContent = updatedContent.replace(new RegExp(article1.images[1].url, 'g'), newUrls[1]);
+             article1.images[1].url = newUrls[1];
+             
+             updatedContent = updatedContent.replace(new RegExp(article1.images[2].url, 'g'), newUrls[2]);
+             article1.images[2].url = newUrls[2];
+             
+             updatedContent = updatedContent.replace(new RegExp(article1.images[3].url, 'g'), newUrls[3]);
+             article1.images[3].url = newUrls[3];
+          } else {
+             // Fallback if structured differently
+             const regex = /gemini_img_[a-zA-Z0-9_]+/g;
+             let match;
+             let index = 0;
+             while ((match = regex.exec(updatedContent)) !== null && index < 4) {
+               updatedContent = updatedContent.replace(new RegExp(match[0], 'g'), newUrls[index]);
+               index++;
+             }
+             
+             // Update images array
+             article1.images = [
+               { url: newUrls[0], type: 'cover', alt: 'เครื่องซีลมือกด' },
+               { url: newUrls[1], type: 'inline1', alt: 'การใช้งานเครื่องซีลมือกด' },
+               { url: newUrls[2], type: 'inline2', alt: 'เครื่องซีลมือกด' },
+               { url: newUrls[3], type: 'inline3', alt: 'เครื่องซีลมือกด' }
+             ];
+          }
+          
+          article1.content = updatedContent;
+          localStorage.setItem('campaign_config_generatedArticles', JSON.stringify(articles));
+          
+          document.getElementById('status').innerText = '✅ อัปเดตบทความที่ 1 สำเร็จ! กลับไป Refresh ที่แอปได้เลยครับ';
+          document.getElementById('status').style.color = 'green';
+        } else {
+          document.getElementById('status').innerText = '❌ ไม่พบบทความที่ 1';
+        }
+      }
+    } catch (e) {
+      document.getElementById('status').innerText = '❌ Error: ' + e.message;
+    }
+  </script>
+</body>
+</html>`;
+
+  fs.writeFileSync('d:/SEOGEN/public/update-article1.html', htmlContent);
+  console.log('Done!');
+}
+
+execute();

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Migrate ALL Images to Supabase</title>
+  <style>body { font-family: sans-serif; padding: 2rem; }</style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+</head>
+<body>
+  <h1>กำลังอัปโหลดรูปภาพ "ทั้งหมด" (รวมของเก่า) จากหน่วยความจำขึ้น Cloud...</h1>
+  <div id="status" style="white-space: pre-wrap; font-family: monospace; line-height: 1.5;">เริ่มทำงาน...<br></div>
+  <script>
+    const log = (msg) => {
+      document.getElementById('status').innerHTML += msg + '<br>';
+    };
+
+    const supabaseUrl = 'https://jkfyyidrrjenvwdxljze.supabase.co';
+    const supabaseKey = 'process.env.SUPABASE_SECRET_KEY || ""'; // Using secret key for admin access locally
+
+    // Convert dataURI to Blob
+    function dataURItoBlob(dataURI) {
+      var byteString = atob(dataURI.split(',')[1]);
+      var mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+      var ab = new ArrayBuffer(byteString.length);
+      var ia = new Uint8Array(ab);
+      for (var i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+      }
+      return new Blob([ab], {type: mimeString});
+    }
+
+    async function uploadToSupabaseViaFetch(fileName, fileBlob) {
+      const url = `${supabaseUrl}/storage/v1/object/articles/${fileName}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'image/png',
+          'x-upsert': 'true'
+        },
+        body: fileBlob
+      });
+      
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.message || 'Upload failed');
+      }
+      
+      return `${supabaseUrl}/storage/v1/object/public/articles/${fileName}`;
+    }
+
+    async function migrateAll() {
+      try {
+        log('กำลังโหลดข้อมูลบทความ...');
+        const saved = localStorage.getItem('campaign_config_generatedArticles');
+        if (!saved) {
+          log('❌ ไม่พบบทความในระบบ');
+          return;
+        }
+
+        let articles = JSON.parse(saved);
+        let updatedCount = 0;
+
+        for (let i = 0; i < articles.length; i++) {
+          let article = articles[i];
+          let updatedContent = article.content;
+          
+          if (article.images && Array.isArray(article.images)) {
+            for (let j = 0; j < article.images.length; j++) {
+              let img = article.images[j];
+              
+              // If it's a local storage image
+              if (img.url && img.url.startsWith('gemini_img_')) {
+                log(`พบรูปท้องถิ่น: ${img.url} กำลังอัปโหลด...`);
+                
+                // Read base64 from localforage
+                const base64Data = await localforage.getItem(img.url);
+                if (!base64Data) {
+                  log(`⚠️ ไม่พบข้อมูลรูป ${img.url} ในเครื่อง ข้ามไป`);
+                  continue;
+                }
+
+                try {
+                  const fileName = `seo-campaign/${img.url}_${Date.now()}.png`;
+                  const fileBlob = dataURItoBlob(base64Data);
+                  
+                  // Upload to Supabase via REST
+                  const publicUrl = await uploadToSupabaseViaFetch(fileName, fileBlob);
+                  
+                  // Update URL in article
+                  img.url = publicUrl;
+                  
+                  // Replace in markdown content
+                  updatedContent = updatedContent.replace(new RegExp(img.url, 'g'), publicUrl);
+                  
+                  updatedCount++;
+                  log(`✅ อัปโหลดสำเร็จ: ${publicUrl}`);
+                } catch (uploadErr) {
+                  log(`❌ เกิดข้อผิดพลาดในการอัปโหลด ${img.url}: ${uploadErr.message}`);
+                }
+              }
+            }
+          }
+          
+          article.content = updatedContent;
+          articles[i] = article;
+        }
+
+        if (updatedCount > 0) {
+          localStorage.setItem('campaign_config_generatedArticles', JSON.stringify(articles));
+          log(`\n<span style="color: green; font-weight: bold; font-size: 1.2em;">🎉 เสร็จสมบูรณ์! อัปเดตไปทั้งหมด ${updatedCount} รูป ตอนนี้ก๊อปปี้ไป Notion ได้ชัวร์ 100% ครับ!</span>`);
+        } else {
+          log(`\n<span style="color: blue; font-weight: bold; font-size: 1.2em;">ไม่พบรูปที่ต้องอัปเดต (อัปเดตครบหมดแล้วครับ!)</span>`);
+        }
+        
+      } catch (err) {
+        log('❌ เกิดข้อผิดพลาดร้ายแรง: ' + err.message);
+      }
+    }
+
+    // Give it a tiny delay so the UI updates with "เริ่มทำงาน..." first
+    setTimeout(migrateAll, 500);
+  </script>
+</body>
+</html>

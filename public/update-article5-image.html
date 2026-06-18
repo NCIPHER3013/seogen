@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Update Article 5 Image</title>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; background: #f4f4f5; }
+    .card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 600px; margin: 0 auto; }
+    h1 { color: #18181b; font-size: 1.5rem; margin-bottom: 1rem; }
+    #status { color: #2563eb; font-weight: bold; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>กำลังเปลี่ยนรูปภาพที่ 4 ของบทความที่ 5...</h1>
+    <div id="status">กำลังดำเนินการ...</div>
+  </div>
+  <script>
+    const newImageUrl = "https://jkfyyidrrjenvwdxljze.supabase.co/storage/v1/object/public/articles/seo-campaign/forklift_clean_inline3_new_unbranded_1780853120574.png";
+    
+    try {
+      const saved = localStorage.getItem('campaign_config_generatedArticles');
+      if (saved) {
+        let current = JSON.parse(saved);
+        const articleIndex = current.findIndex(a => a.keyword === 'วิธีทำความสะอาดรถโฟล์คลิฟท์');
+        if (articleIndex !== -1) {
+          // แทนที่รูปภาพที่ 4 (index 3)
+          current[articleIndex].images[3].url = newImageUrl;
+          
+          // แก้ไขเนื้อหา alt text เล็กน้อยเพื่อให้ตรงกับรูปใหม่
+          current[articleIndex].images[3].alt = "การฉีดพ่นโฟมทำความสะอาดยางรถโฟล์คลิฟท์ชนิด Non-marking";
+          
+          localStorage.setItem('campaign_config_generatedArticles', JSON.stringify(current));
+          document.getElementById('status').innerText = '✅ อัปเดตเปลี่ยนภาพโฟมล้างล้อใหม่เรียบร้อยแล้ว!';
+          document.getElementById('status').style.color = '#16a34a';
+        } else {
+          document.getElementById('status').innerText = '❌ ไม่พบบทความที่ 5 ในระบบ';
+          document.getElementById('status').style.color = '#dc2626';
+        }
+      } else {
+        document.getElementById('status').innerText = '❌ ไม่มีข้อมูลบทความใน LocalStorage';
+        document.getElementById('status').style.color = '#dc2626';
+      }
+    } catch (err) {
+      document.getElementById('status').innerText = '❌ Error: ' + err.message;
+      document.getElementById('status').style.color = '#dc2626';
+    }
+  </script>
+</body>
+</html>

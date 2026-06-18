@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Revert Restaurant Sealer Article</title>
+  <style>body { font-family: sans-serif; padding: 2rem; }</style>
+</head>
+<body>
+  <h1>กำลังกู้คืนรูปภาพเดิมสำหรับบทความ: เครื่องซีลร้านอาหาร...</h1>
+  <div id="status" style="white-space: pre-wrap; font-family: monospace; line-height: 1.5; margin-top: 20px;"></div>
+  <script>
+    const log = (msg) => {
+      document.getElementById('status').innerHTML += msg + '<br>';
+    };
+
+    // Original Supabase URLs for Article 7
+    const originalUrls = [
+      "https://jkfyyidrrjenvwdxljze.supabase.co/storage/v1/object/public/articles/seo-campaign/restaurant_sealer_cover_1779958554570.png",
+      "https://jkfyyidrrjenvwdxljze.supabase.co/storage/v1/object/public/articles/seo-campaign/restaurant_sealer_inline_1_1779958576063.png",
+      "https://jkfyyidrrjenvwdxljze.supabase.co/storage/v1/object/public/articles/seo-campaign/restaurant_sealer_inline_2_1779958597801.png",
+      "https://jkfyyidrrjenvwdxljze.supabase.co/storage/v1/object/public/articles/seo-campaign/restaurant_sealer_inline_3_1779958616667.png"
+    ];
+    
+    try {
+      const saved = localStorage.getItem('campaign_config_generatedArticles');
+      if (saved) {
+        let articles = JSON.parse(saved);
+        
+        let targetArticle = articles.find(a => a.keyword === 'เครื่องซีลสำหรับร้านอาหาร' || a.title.includes('เครื่องซีลสำหรับร้านอาหาร') || a.title.includes('ร้านอาหาร'));
+        
+        if (targetArticle) {
+          let updatedContent = targetArticle.content;
+          
+          const regex = /!\\[.*?\\]\\((.*?)\\)/g;
+          let match;
+          let imageLinksFound = [];
+          
+          while ((match = regex.exec(updatedContent)) !== null) {
+            imageLinksFound.push(match[1]);
+          }
+          
+          log('พบรูปภาพในเนื้อหาทั้งหมด ' + imageLinksFound.length + ' รูป');
+          
+          if (imageLinksFound.length >= 4) {
+            log('กู้คืนรูปที่ 1 (หน้าปก)...');
+            updatedContent = updatedContent.split(imageLinksFound[0]).join(originalUrls[0]);
+            
+            log('กู้คืนรูปที่ 2 (Inline 1)...');
+            updatedContent = updatedContent.split(imageLinksFound[1]).join(originalUrls[1]);
+            
+            log('กู้คืนรูปที่ 3 (Inline 2)...');
+            updatedContent = updatedContent.split(imageLinksFound[2]).join(originalUrls[2]);
+            
+            log('กู้คืนรูปที่ 4 (Inline 3)...');
+            updatedContent = updatedContent.split(imageLinksFound[3]).join(originalUrls[3]);
+            
+            targetArticle.images = [
+               { url: originalUrls[0], type: 'cover', alt: 'เครื่องซีลสำหรับร้านอาหาร' },
+               { url: originalUrls[1], type: 'inline1', alt: 'การแพ็ควัตถุดิบอาหาร' },
+               { url: originalUrls[2], type: 'inline2', alt: 'เครื่องซีลสุญญากาศ' },
+               { url: originalUrls[3], type: 'inline3', alt: 'แผงควบคุม' }
+            ];
+            
+            targetArticle.content = updatedContent;
+            localStorage.setItem('campaign_config_generatedArticles', JSON.stringify(articles));
+            
+            log('<br><span style="color:green; font-weight:bold; font-size: 1.2em;">✅ กู้คืนภาพชุดเดิมสำเร็จแล้วครับ!</span><br>กลับไป Refresh ที่หน้าแอปได้เลยครับ');
+          } else {
+            log('<span style="color:red">❌ พบรูปน้อยกว่า 4 รูปในบทความ ไม่สามารถกู้คืนได้</span>');
+          }
+          
+        } else {
+          log('<span style="color:red">❌ ไม่พบบทความ เครื่องซีลสำหรับร้านอาหาร ในระบบ</span>');
+        }
+      }
+    } catch (e) {
+      log('<span style="color:red">❌ Error: ' + e.message + '</span>');
+    }
+  </script>
+</body>
+</html>

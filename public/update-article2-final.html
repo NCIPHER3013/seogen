@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Update Tabletop Sealer Article (FINAL FIX)</title>
+  <style>body { font-family: sans-serif; padding: 2rem; }</style>
+</head>
+<body>
+  <h1>กำลังเปลี่ยนรูปภาพแบบ "ล้างไพ่" (แทนที่รูปลำดับ 1, 2, 3 ในเนื้อหาโดยตรง)...</h1>
+  <div id="status" style="white-space: pre-wrap; font-family: monospace; line-height: 1.5; margin-top: 20px;"></div>
+  <script>
+    const log = (msg) => {
+      document.getElementById('status').innerHTML += msg + '<br>';
+    };
+
+    const newUrls = [
+      "https://jkfyyidrrjenvwdxljze.supabase.co/storage/v1/object/public/articles/seo-campaign/tabletop_vacuum_cover_unbranded_1779995175619.png",
+      "https://jkfyyidrrjenvwdxljze.supabase.co/storage/v1/object/public/articles/seo-campaign/tabletop_band_inline_unbranded_1779995194318.png",
+      "https://jkfyyidrrjenvwdxljze.supabase.co/storage/v1/object/public/articles/seo-campaign/tabletop_control_inline_unbranded_1779995209812.png"
+    ];
+    
+    try {
+      const saved = localStorage.getItem('campaign_config_generatedArticles');
+      if (saved) {
+        let articles = JSON.parse(saved);
+        
+        let targetArticle = articles.find(a => a.keyword === 'เครื่องซีลตั้งโต๊ะเล็ก' || a.title.includes('เครื่องซีลตั้งโต๊ะ'));
+        if (targetArticle) {
+          let updatedContent = targetArticle.content;
+          
+          // Regex to match markdown images: ![alt](url)
+          const regex = /!\[.*?\]\((.*?)\)/g;
+          let match;
+          let imageLinksFound = [];
+          
+          while ((match = regex.exec(updatedContent)) !== null) {
+            imageLinksFound.push(match[1]); // The URL part
+          }
+          
+          log(`พบรูปภาพในเนื้อหาทั้งหมด ${imageLinksFound.length} รูป`);
+          
+          if (imageLinksFound.length >= 3) {
+            // Replace exactly the matched URLs in order
+            // We use string split/join to avoid regex escaping issues with URLs
+            log('แทนที่รูปที่ 1 (หน้าปก): ' + imageLinksFound[0] + ' -> รูปใหม่');
+            updatedContent = updatedContent.split(imageLinksFound[0]).join(newUrls[0]);
+            
+            log('แทนที่รูปที่ 2 (Inline 1): ' + imageLinksFound[1] + ' -> รูปใหม่');
+            updatedContent = updatedContent.split(imageLinksFound[1]).join(newUrls[1]);
+            
+            log('แทนที่รูปที่ 3 (Inline 2): ' + imageLinksFound[2] + ' -> รูปใหม่');
+            updatedContent = updatedContent.split(imageLinksFound[2]).join(newUrls[2]);
+            
+            // Also update the 'images' array if it exists
+            targetArticle.images = [
+               { url: newUrls[0], type: 'cover', alt: 'เครื่องซีลตั้งโต๊ะแบบสูญญากาศ' },
+               { url: newUrls[1], type: 'inline1', alt: 'เครื่องซีลสายพานตั้งโต๊ะ' },
+               { url: newUrls[2], type: 'inline2', alt: 'แผงควบคุมดิจิทัล' }
+            ];
+            
+            targetArticle.content = updatedContent;
+            localStorage.setItem('campaign_config_generatedArticles', JSON.stringify(articles));
+            
+            log('<br><span style="color:green; font-weight:bold; font-size: 1.2em;">✅ อัปเดตสำเร็จ! ลบภาพเก่าทิ้งแบบถอนรากถอนโคนแล้วครับ!</span><br>กลับไป Refresh ที่หน้าแอปได้เลยครับ');
+          } else {
+            log('<span style="color:red">❌ พบรูปรถน้อยกว่า 3 รูปในบทความ ไม่สามารถอัปเดตตามลำดับได้</span>');
+          }
+          
+        } else {
+          log('<span style="color:red">❌ ไม่พบบทความ เครื่องซีลตั้งโต๊ะ ในระบบ</span>');
+        }
+      }
+    } catch (e) {
+      log('<span style="color:red">❌ Error: ' + e.message + '</span>');
+    }
+  </script>
+</body>
+</html>

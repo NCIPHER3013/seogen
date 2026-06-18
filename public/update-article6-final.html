@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Update Bakery Sealer Article (FINAL FIX)</title>
+  <style>body { font-family: sans-serif; padding: 2rem; }</style>
+</head>
+<body>
+  <h1>กำลังเปลี่ยนรูปภาพแบบ "ล้างไพ่" สำหรับบทความ: เครื่องซีลร้านเบเกอรี่...</h1>
+  <div id="status" style="white-space: pre-wrap; font-family: monospace; line-height: 1.5; margin-top: 20px;"></div>
+  <script>
+    const log = (msg) => {
+      document.getElementById('status').innerHTML += msg + '<br>';
+    };
+
+    const newUrls = ["https://jkfyyidrrjenvwdxljze.supabase.co/storage/v1/object/public/articles/seo-campaign/bakery_cover_unbranded_1779995996802.png","https://jkfyyidrrjenvwdxljze.supabase.co/storage/v1/object/public/articles/seo-campaign/bakery_inline1_unbranded_1779996011918.png","https://jkfyyidrrjenvwdxljze.supabase.co/storage/v1/object/public/articles/seo-campaign/bakery_inline2_unbranded_1779996033245.png","https://jkfyyidrrjenvwdxljze.supabase.co/storage/v1/object/public/articles/seo-campaign/bakery_inline3_unbranded_1779996048005.png"];
+    
+    try {
+      const saved = localStorage.getItem('campaign_config_generatedArticles');
+      if (saved) {
+        let articles = JSON.parse(saved);
+        
+        // Find Article 6
+        let targetArticle = articles.find(a => a.keyword === 'เครื่องซีลร้านเบเกอรี่' || a.title.includes('เครื่องซีลร้านเบเกอรี่'));
+        
+        if (targetArticle) {
+          let updatedContent = targetArticle.content;
+          
+          // Regex to match markdown images: ![alt](url)
+          const regex = /!\[.*?\]\((.*?)\)/g;
+          let match;
+          let imageLinksFound = [];
+          
+          while ((match = regex.exec(updatedContent)) !== null) {
+            imageLinksFound.push(match[1]); // The URL part
+          }
+          
+          log('พบรูปภาพในเนื้อหาทั้งหมด ' + imageLinksFound.length + ' รูป');
+          
+          if (imageLinksFound.length >= 4) {
+            // Replace exactly the matched URLs in order
+            log('แทนที่รูปที่ 1 (หน้าปก): ' + imageLinksFound[0] + ' -> รูปใหม่');
+            updatedContent = updatedContent.split(imageLinksFound[0]).join(newUrls[0]);
+            
+            log('แทนที่รูปที่ 2 (Inline 1): ' + imageLinksFound[1] + ' -> รูปใหม่');
+            updatedContent = updatedContent.split(imageLinksFound[1]).join(newUrls[1]);
+            
+            log('แทนที่รูปที่ 3 (Inline 2): ' + imageLinksFound[2] + ' -> รูปใหม่');
+            updatedContent = updatedContent.split(imageLinksFound[2]).join(newUrls[2]);
+            
+            log('แทนที่รูปที่ 4 (Inline 3): ' + imageLinksFound[3] + ' -> รูปใหม่');
+            updatedContent = updatedContent.split(imageLinksFound[3]).join(newUrls[3]);
+            
+            // Update images array
+            targetArticle.images = [
+               { url: newUrls[0], type: 'cover', alt: 'เครื่องซีลเท้าเหยียบ' },
+               { url: newUrls[1], type: 'inline1', alt: 'เครื่องซีลสายพาน' },
+               { url: newUrls[2], type: 'inline2', alt: 'เครื่องซีลความร้อนโดยตรง' },
+               { url: newUrls[3], type: 'inline3', alt: 'แผงควบคุม' }
+            ];
+            
+            targetArticle.content = updatedContent;
+            localStorage.setItem('campaign_config_generatedArticles', JSON.stringify(articles));
+            
+            log('<br><span style="color:green; font-weight:bold; font-size: 1.2em;">✅ อัปเดตสำเร็จ! ลบภาพเก่าทิ้งแบบถอนรากถอนโคนแล้วครับ!</span><br>กลับไป Refresh ที่หน้าแอปได้เลยครับ');
+          } else {
+            log('<span style="color:red">❌ พบรูปน้อยกว่า 4 รูปในบทความ ไม่สามารถอัปเดตตามลำดับได้</span>');
+          }
+          
+        } else {
+          log('<span style="color:red">❌ ไม่พบบทความ เครื่องซีลร้านเบเกอรี่ ในระบบ</span>');
+        }
+      }
+    } catch (e) {
+      log('<span style="color:red">❌ Error: ' + e.message + '</span>');
+    }
+  </script>
+</body>
+</html>
