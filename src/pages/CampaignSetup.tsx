@@ -435,13 +435,13 @@ export default function CampaignSetup() {
   
   const [internalLinks, setInternalLinks] = usePersistentState('internalLinks', '');
   const [sitemaps, setSitemaps] = usePersistentState<string[]>('sitemaps', []);
-  const [customApiKey, setCustomApiKey] = usePersistentState('customApiKey', '');
-  const [customOpenAiApiKey, setCustomOpenAiApiKey] = usePersistentState('customOpenAiApiKey', '');
-  const [textApiModel, setTextApiModel] = usePersistentState('textApiModel', 'auto');
-  const [textApiBaseUrl, setTextApiBaseUrl] = usePersistentState('textApiBaseUrl', '');
+  const [customApiKey, setCustomApiKey] = usePersistentState('customApiKey', '645139e1a8fc4ed18665660a82c7412d.tWOLRtwBoUBsr8dJ');
+  const [customOpenAiApiKey, setCustomOpenAiApiKey] = usePersistentState('customOpenAiApiKey', 'ark-a53fc090-6973-4a82-b47b-5bc5c4c952a4-b1f81');
+  const [textApiModel, setTextApiModel] = usePersistentState('textApiModel', 'glm-5-turbo');
+  const [textApiBaseUrl, setTextApiBaseUrl] = usePersistentState('textApiBaseUrl', 'https://api.z.ai/api/coding/paas/v4');
   const [textApiPrompt, setTextApiPrompt] = usePersistentState('textApiPrompt', '');
-  const [imageApiModel, setImageApiModel] = usePersistentState('imageApiModel', 'auto');
-  const [imageApiBaseUrl, setImageApiBaseUrl] = usePersistentState('imageApiBaseUrl', '');
+  const [imageApiModel, setImageApiModel] = usePersistentState('imageApiModel', 'seedream-4-5-251128');
+  const [imageApiBaseUrl, setImageApiBaseUrl] = usePersistentState('imageApiBaseUrl', 'https://ark.ap-southeast.bytepluses.com/api/v3/images/generations');
   const [imageApiPrompt, setImageApiPrompt] = usePersistentState('imageApiPrompt', '');
 
   const [isTestingText, setIsTestingText] = useState(false);
@@ -449,6 +449,28 @@ export default function CampaignSetup() {
   
   const [isTestingImage, setIsTestingImage] = useState(false);
   const [testImageStatus, setTestImageStatus] = useState<{success: boolean, message: string} | null>(null);
+
+  useEffect(() => {
+    // Migrate empty or old values to the new Z.ai & ByteDance Seedream keys/configs
+    if (!customApiKey || customApiKey === 'a70be79aa9cb48898212205ead1bcd29.Xpy23Bqe6Knurg6d') {
+      setCustomApiKey('645139e1a8fc4ed18665660a82c7412d.tWOLRtwBoUBsr8dJ');
+    }
+    if (!textApiModel || textApiModel === 'auto' || textApiModel === 'GLM-5-Turbo') {
+      setTextApiModel('glm-5-turbo');
+    }
+    if (!textApiBaseUrl || textApiBaseUrl === 'https://open.bigmodel.cn/api/paas/v4') {
+      setTextApiBaseUrl('https://api.z.ai/api/coding/paas/v4');
+    }
+    if (!customOpenAiApiKey) {
+      setCustomOpenAiApiKey('ark-a53fc090-6973-4a82-b47b-5bc5c4c952a4-b1f81');
+    }
+    if (!imageApiModel || imageApiModel === 'auto') {
+      setImageApiModel('seedream-4-5-251128');
+    }
+    if (!imageApiBaseUrl) {
+      setImageApiBaseUrl('https://ark.ap-southeast.bytepluses.com/api/v3/images/generations');
+    }
+  }, []);
 
   const testTextApi = async () => {
     if (!customApiKey) {
@@ -518,7 +540,10 @@ export default function CampaignSetup() {
         body: JSON.stringify({
           model: imageRequestModel, // testing image model
           contents: 'A simple red apple on white background', // text means trigger image generation in our updated backend logic?
-          config: { baseUrl: imageApiBaseUrl }
+          config: { 
+            baseUrl: imageApiBaseUrl,
+            aspectRatio: aspectRatio 
+          }
         })
       });
       if (!response.ok) {
@@ -1391,7 +1416,7 @@ export default function CampaignSetup() {
                               <SelectItem value="claude-3-5-haiku">Claude 3.5 Haiku (Anthropic)</SelectItem>
                               <SelectItem value="GLM-5.1">GLM-5.1 (Z.AI)</SelectItem>
                               <SelectItem value="GLM-5">GLM-5 (Z.AI)</SelectItem>
-                              <SelectItem value="GLM-5-Turbo">GLM-5-Turbo (Z.AI)</SelectItem>
+                              <SelectItem value="glm-5-turbo">glm-5-turbo (Z.AI)</SelectItem>
                               <SelectItem value="GLM-4.7">GLM-4.7 (Z.AI)</SelectItem>
                               <SelectItem value="GLM-4.6">GLM-4.6 (Z.AI)</SelectItem>
                               <SelectItem value="GLM-4.5">GLM-4.5 (Z.AI)</SelectItem>
@@ -1492,6 +1517,7 @@ export default function CampaignSetup() {
                               <SelectItem value="sdxl">SDXL (Custom)</SelectItem>
                               <SelectItem value="GLM-Image">GLM-Image (Z.AI)</SelectItem>
                               <SelectItem value="CogView-4-250304">CogView-4 (Z.AI)</SelectItem>
+                              <SelectItem value="seedream-4-5-251128">Seedream 4.5 (ByteDance)</SelectItem>
                             </SelectContent>
                           </Select>
                           <p className="text-xs text-slate-500">

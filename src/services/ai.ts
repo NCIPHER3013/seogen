@@ -211,7 +211,7 @@ Output the article in Markdown format. Use proper heading tags (H1, H2, H3), bul
       let requestModel = config.textApiModel;
       if (!config.textApiModel || config.textApiModel === 'auto') {
         if (apiKey.includes('.')) {
-          requestModel = 'glm-4-flash';
+          requestModel = 'glm-5-turbo';
         } else if (apiKey.startsWith('sk-')) {
           requestModel = 'gpt-4o-mini';
         } else {
@@ -293,7 +293,7 @@ Output the article in Markdown format. Use proper heading tags (H1, H2, H3), bul
 
         try {
           const imageRequestModel = (!config.imageApiModel || config.imageApiModel === 'auto')
-              ? 'gpt-image-2'
+              ? (imageGenApiKey.startsWith('ark-') ? 'seedream-4-5-251128' : 'gpt-image-2')
               : config.imageApiModel;
 
           const imageRes = await fetch('/api/gemini/generate', {
@@ -305,7 +305,10 @@ Output the article in Markdown format. Use proper heading tags (H1, H2, H3), bul
              body: JSON.stringify({
                model: imageRequestModel,
                contents: finalImagePrompt,
-               config: { baseUrl: config.imageApiBaseUrl }
+               config: { 
+                 baseUrl: config.imageApiBaseUrl,
+                 aspectRatio: ar
+               }
              })
           });
           

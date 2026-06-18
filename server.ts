@@ -70,21 +70,24 @@ async function startServer() {
         return res.status(500).json({ error: "Missing API Key" });
       }
       
-      const isImageModel = model && ['dall-e', 'flux', 'midjourney', 'sdxl', 'glm-image', 'cogview', 'gpt-image'].some(m => model.toLowerCase().includes(m));
+      const isImageModel = model && ['dall-e', 'flux', 'midjourney', 'sdxl', 'glm-image', 'cogview', 'gpt-image', 'seedream'].some(m => model.toLowerCase().includes(m));
       const hasCustomBaseUrl = config && config.baseUrl && config.baseUrl.trim() !== '';
       const isZAIModel = model && (model.toLowerCase().startsWith("glm-") || model.toLowerCase().startsWith("cogview"));
+      const isSeedreamModel = model && model.toLowerCase().includes("seedream");
       
-      if (isImageModel && (apiKey.startsWith("sk-") || hasCustomBaseUrl || isZAIModel)) {
+      if (isImageModel && (apiKey.startsWith("sk-") || apiKey.startsWith("ark-") || hasCustomBaseUrl || isZAIModel || isSeedreamModel)) {
         try {
           let baseUrl = config?.baseUrl?.replace(/\/+$/, '');
           if (!baseUrl) {
-             if (model && model.toLowerCase().startsWith("glm-") || model?.toLowerCase().startsWith("cogview")) {
-                 baseUrl = "https://open.bigmodel.cn/api/paas/v4";
+             if (model && (model.toLowerCase().startsWith("glm-") || model.toLowerCase().startsWith("cogview"))) {
+                  baseUrl = "https://open.bigmodel.cn/api/paas/v4";
+             } else if (model && model.toLowerCase().includes("seedream")) {
+                  baseUrl = "https://ark.ap-southeast.bytepluses.com/api/v3/images/generations";
              } else {
-                 baseUrl = "https://api.openai.com/v1";
+                  baseUrl = "https://api.openai.com/v1";
              }
           }
-          const endpoint = `${baseUrl}/images/generations`;
+          const endpoint = baseUrl.endsWith('/images/generations') ? baseUrl : `${baseUrl}/images/generations`;
 
           const response = await fetch(endpoint, {
             method: "POST",
@@ -92,12 +95,14 @@ async function startServer() {
               "Content-Type": "application/json",
               "Authorization": `Bearer ${apiKey}`
             },
-            body: JSON.stringify({
-              model: model,
-              prompt: contents.substring(0, 4000), // OpenAI limits prompt length
-              n: 1,
-              size: "1024x1024"
-            })
+             body: JSON.stringify({
+               model: model,
+               prompt: contents.substring(0, 4000), // OpenAI limits prompt length
+               n: 1,
+               size: (model && model.toLowerCase().includes('seedream'))
+                 ? (config?.aspectRatio === '16:9' ? '2560x1440' : '1920x1920')
+                 : (config?.aspectRatio === '16:9' ? '1024x768' : '1024x1024')
+             })
           });
           
           let data;
@@ -205,7 +210,7 @@ async function startServer() {
         }
       }
 
-      const isOpenAI = apiKey.startsWith("sk-") || hasCustomBaseUrl || (model && (model.startsWith("gpt-") || model.startsWith("o1") || model.startsWith("o3") || model.toLowerCase().startsWith("glm-") || model.toLowerCase().startsWith("claude-")));
+      const isOpenAI = apiKey.startsWith("sk-") || apiKey.includes(".") || hasCustomBaseUrl || (model && (model.startsWith("gpt-") || model.startsWith("o1") || model.startsWith("o3") || model.toLowerCase().startsWith("glm-") || model.toLowerCase().startsWith("claude-")));
       
       console.log(`[Server] Generating content with model: ${model}, isOpenAI: ${isOpenAI}, isImageModel: ${isImageModel}`);
       
@@ -213,12 +218,12 @@ async function startServer() {
           let baseUrl = config?.baseUrl?.replace(/\/+$/, '');
           if (!baseUrl) {
              if (model && model.toLowerCase().startsWith("glm-")) {
-                 baseUrl = "https://open.bigmodel.cn/api/paas/v4";
+                  baseUrl = "https://api.z.ai/api/coding/paas/v4";
              } else {
-                 baseUrl = "https://api.openai.com/v1";
+                  baseUrl = "https://api.openai.com/v1";
              }
           }
-          const endpoint = `${baseUrl}/chat/completions`;
+          const endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
           
           const actualModel = model || "gpt-4o-mini";
           const response = await fetch(endpoint, {
