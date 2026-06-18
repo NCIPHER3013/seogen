@@ -263,28 +263,28 @@ export default function CampaignSetup() {
   // Automatic Seeding Logic for empty state
   useEffect(() => {
     const savedInputs = localStorage.getItem('campaign_inputs');
-    let hasForkliftOverrides = false;
+    let hasForkliftUndercarriage = false;
     if (savedInputs) {
       try {
         const parsed = JSON.parse(savedInputs);
-        if (Array.isArray(parsed) && parsed.some(item => item.keyword === "GMP รถโฟล์คลิฟท์ในโรงงานอาหาร" && item.overrides?.targetCountry === "thailand")) {
-          hasForkliftOverrides = true;
+        if (Array.isArray(parsed) && parsed.some(item => item.keyword === "อะไหล่ช่วงล่างรถโฟล์คลิฟท์")) {
+          hasForkliftUndercarriage = true;
         }
       } catch (e) {}
     }
 
-    if (!hasForkliftOverrides) {
+    if (!hasForkliftUndercarriage) {
       const dataToImport = [
-        { keyword: "รถโฟล์คลิฟท์โรงงานอาหาร", title: "รถโฟล์คลิฟท์สำหรับโรงงานอาหาร มาตรฐานและความปลอดภัย" },
-        { keyword: "GMP รถโฟล์คลิฟท์ในโรงงานอาหาร", title: "มาตรฐาน GMP รถโฟล์คลิฟท์ในโรงงานอาหาร" },
-        { keyword: "Food Grade รถโฟล์คลิฟท์", title: "วัสดุ Food Grade รถโฟล์คลิฟท์ ทำจากอะไร" },
-        { keyword: "รถโฟล์คลิฟท์สำหรับห้องเย็น", title: "รถโฟล์คลิฟท์สำหรับห้องเย็นในโรงงานอาหาร" },
-        { keyword: "วิธีทำความสะอาดรถโฟล์คลิฟท์", title: "วิธีทำความสะอาดรถโฟล์คลิฟท์ในโรงงานอาหาร ตามมาตรฐาน GMP" },
-        { keyword: "แหล่งปนเปื้อนรถโฟล์คลิฟท์", title: "แหล่งปนเปื้อนรถโฟล์คลิฟท์เกิดได้อย่างไรการป้องกันก่อนสาย" }
+        { keyword: "อะไหล่ช่วงล่างรถโฟล์คลิฟท์", title: "อะไหล่ช่วงล่างรถโฟล์คลิฟท์การตรวจสอบและเปลี่ยน" },
+        { keyword: "ยางรถโฟล์คลิฟท์ชนิดต่างๆ", title: "ควรเลือกอย่างไรสำหรับยางรถโฟล์คลิฟท์ชนิดต่างๆ แข็ง นิ่ม โฟม" },
+        { keyword: "ล้อและแบริ่งรถโฟล์คลิฟท์", title: "ล้อและแบริ่งรถโฟล์คลิฟท์ เมื่อไหร่ควรเปลี่ยน" },
+        { keyword: "ระบบบังคับเลี้ยว", title: "ระบบบังคับเลี้ยวและอะไหล่รถโฟล์คลิฟท์การดูแลให้คล่องตัว" },
+        { keyword: "โช้คอัพรถโฟล์คลิฟท์", title: "โช้คอัพรถโฟล์คลิฟท์ ความรู้ด้านลดการสั่นสะเทือน" },
+        { keyword: "เพลาและข้อต่อรถโฟล์คลิฟท์", title: "เพลาและข้อต่อรถโฟล์คลิฟท์ควรตรวจสอบอย่างไร" }
       ];
       const newItems = dataToImport.map((item, index) => {
         const base = {
-          id: 'forklift-food-auto-' + Date.now() + '-' + index,
+          id: 'forklift-under-auto-' + Date.now() + '-' + index,
           keyword: item.keyword,
           title: item.title,
           language: 'thai'
@@ -293,7 +293,7 @@ export default function CampaignSetup() {
           return {
             ...base,
             overrides: {
-              secondaryKeywords: ["รถโฟล์คลิฟท์โรงงานอาหาร"],
+              secondaryKeywords: ["อะไหล่ช่วงล่างรถโฟล์คลิฟท์"],
               language: "thai",
               targetCountry: "thailand",
               tone: "professional",
