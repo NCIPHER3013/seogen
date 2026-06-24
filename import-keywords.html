@@ -104,10 +104,11 @@
     }
 
     h1 {
-      font-size: 2.25rem;
+      font-size: 2rem;
       font-weight: 800;
       background: linear-gradient(135deg, #fff 30%, #a78bfa 100%);
       -webkit-background-clip: text;
+      background-clip: text;
       -webkit-text-fill-color: transparent;
       margin-bottom: 0.5rem;
       letter-spacing: -0.02em;
@@ -115,8 +116,55 @@
 
     .subtitle {
       color: var(--text-muted);
-      font-size: 1rem;
+      font-size: 0.95rem;
       font-weight: 300;
+    }
+
+    /* Campaign Selector Card Style */
+    .campaign-selector {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin-bottom: 2rem;
+    }
+
+    .campaign-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.25rem;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      text-align: left;
+    }
+
+    .campaign-card:hover {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(139, 92, 246, 0.4);
+      transform: translateY(-2px);
+    }
+
+    .campaign-card.active {
+      background: var(--primary-light);
+      border-color: var(--primary);
+      box-shadow: 0 0 24px rgba(139, 92, 246, 0.15);
+    }
+
+    .campaign-card h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+      color: #fff;
+    }
+
+    .campaign-card p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .campaign-card.active h3 {
+      color: #c084fc;
     }
 
     .table-container {
@@ -125,6 +173,8 @@
       border-radius: 16px;
       overflow: hidden;
       margin-bottom: 2rem;
+      max-height: 380px;
+      overflow-y: auto;
     }
 
     table {
@@ -142,11 +192,15 @@
       color: var(--text-muted);
       letter-spacing: 0.05em;
       border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      backdrop-filter: blur(10px);
     }
 
     td {
-      padding: 1rem 1.25rem;
-      font-size: 0.95rem;
+      padding: 0.9rem 1.25rem;
+      font-size: 0.9rem;
       border-bottom: 1px solid rgba(255, 255, 255, 0.04);
       color: #e5e7eb;
     }
@@ -163,11 +217,31 @@
       display: inline-block;
       background: var(--primary-light);
       color: #c084fc;
-      padding: 0.25rem 0.75rem;
+      padding: 0.25rem 0.6rem;
       border-radius: 6px;
-      font-size: 0.85rem;
+      font-size: 0.8rem;
       font-weight: 600;
       border: 1px solid rgba(192, 132, 252, 0.15);
+    }
+
+    .level-badge {
+      display: inline-block;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: bold;
+    }
+
+    .level-1 {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+
+    .level-2 {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.2);
     }
 
     .btn-container {
@@ -211,7 +285,7 @@
       display: none;
       position: absolute;
       inset: 0;
-      background: rgba(9, 13, 22, 0.95);
+      background: rgba(9, 13, 22, 0.96);
       border-radius: 24px;
       z-index: 10;
       flex-direction: column;
@@ -253,8 +327,9 @@
     .success-desc {
       color: var(--text-muted);
       margin-bottom: 2rem;
-      max-width: 450px;
+      max-width: 480px;
       line-height: 1.6;
+      font-size: 0.95rem;
     }
   </style>
 </head>
@@ -271,8 +346,8 @@
         </svg>
       </div>
       <h2 class="success-title">นำเข้าคีย์เวิร์ดสำเร็จ!</h2>
-      <p class="success-desc">
-        คีย์เวิร์ดและชื่อบทความอะไหล่ช่วงล่างรถโฟล์คลิฟท์ทั้งหมด 6 รายการ ได้ถูกบรรจุเข้าสู่ระบบนำเข้าคีย์เวิร์ดเรียบร้อยแล้ว คุณสามารถกลับไปที่หน้าเว็บและรีเฟรชเพื่อเริ่มสร้างบทความได้ทันที
+      <p class="success-desc" id="successDesc">
+        คีย์เวิร์ดและชื่อบทความได้ถูกนำเข้าเรียบร้อยแล้ว
       </p>
       <button class="btn btn-primary" onclick="closeSuccess()">
         ตกลง
@@ -285,23 +360,43 @@
         <div class="logo-dot"></div>
         <span class="logo-text">z.ai SEO Studio</span>
       </div>
-      <h1>ระบบนำเข้าคีย์เวิร์ดอะไหล่ช่วงล่างรถโฟล์คลิฟท์</h1>
-      <p class="subtitle">คีย์เวิร์ดและชื่อบทความสำหรับการเขียนบทความ SEO อะไหล่ช่วงล่างรถโฟล์คลิฟท์</p>
+      <h1 id="pageTitle">ระบบนำเข้าคีย์เวิร์ดอัตโนมัติ</h1>
+      <p class="subtitle" id="pageSubtitle">กรุณาเลือกแคมเปญที่ต้องการนำเข้าข้อมูล</p>
     </header>
+
+    <!-- Campaign Card Selectors -->
+    <div class="campaign-selector">
+      <div class="campaign-card active" id="cardForklift" onclick="selectCampaign('forklift')">
+        <h3>ช่วงล่างรถโฟล์คลิฟท์</h3>
+        <p>6 คีย์เวิร์ด (Forklift Undercarriage)</p>
+      </div>
+      <div class="campaign-card" id="cardVacuum" onclick="selectCampaign('vacuum')">
+        <h3>เครื่องซีลสูญญากาศอาหาร</h3>
+        <p>10 คีย์เวิร์ด (Food Vacuum Sealer)</p>
+      </div>
+    </div>
 
     <div class="table-container">
       <table>
         <thead>
           <tr>
-            <th style="width: 10%;">ลำดับ</th>
-            <th style="width: 35%;">คีย์เวิร์ดนำเข้า</th>
-            <th style="width: 55%;">ชื่อบทความที่แนะนำ</th>
+            <th style="width: 8%; text-align: center;"><input type="checkbox" id="selectAll" checked style="transform: scale(1.2); cursor: pointer;"></th>
+            <th style="width: 12%;">ระดับ</th>
+            <th style="width: 30%;">คีย์เวิร์ดนำเข้า</th>
+            <th style="width: 50%;">ชื่อบทความที่แนะนำ</th>
           </tr>
         </thead>
         <tbody id="keywordsTable">
-          <!-- Will be filled by JS -->
+          <!-- Filled dynamically by JS -->
         </tbody>
       </table>
+    </div>
+
+    <!-- Quick Selection Helpers -->
+    <div style="display: flex; justify-content: flex-end; margin-top: -1.25rem; margin-bottom: 2rem; gap: 1.25rem; font-size: 0.85rem; padding: 0 0.5rem;">
+      <span style="color: #a78bfa; cursor: pointer; font-weight: 600; text-decoration: underline;" onclick="selectOnlyLv2()">เลือกเฉพาะ Lv 2</span>
+      <span style="color: var(--text-muted); cursor: pointer; text-decoration: underline;" onclick="toggleAllCheckboxes(true)">เลือกทั้งหมด</span>
+      <span style="color: var(--text-muted); cursor: pointer; text-decoration: underline;" onclick="toggleAllCheckboxes(false)">ไม่เลือกเลย</span>
     </div>
 
     <div class="btn-container">
@@ -311,52 +406,145 @@
           <polyline points="7 10 12 15 17 10"></polyline>
           <line x1="12" y1="15" x2="12" y2="3"></line>
         </svg>
-        นำข้อมูลเข้าเว็บเดี๋ยวนี้
+        นำเข้าแคมเปญนี้เข้าเว็บ
       </button>
     </div>
   </div>
 
   <script>
-    const dataToImport = [
-      {
-        keyword: "อะไหล่ช่วงล่างรถโฟล์คลิฟท์",
-        title: "อะไหล่ช่วงล่างรถโฟล์คลิฟท์การตรวจสอบและเปลี่ยน"
+    const campaigns = {
+      forklift: {
+        title: "ระบบนำเข้าคีย์เวิร์ดอะไหล่ช่วงล่างรถโฟล์คลิฟท์",
+        subtitle: "คีย์เวิร์ดและชื่อบทความสำหรับการเขียนบทความ SEO อะไหล่ช่วงล่างรถโฟล์คลิฟท์",
+        prefix: "forklift-under-",
+        primaryKeyword: "อะไหล่ช่วงล่างรถโฟล์คลิฟท์",
+        data: [
+          { keyword: "อะไหล่ช่วงล่างรถโฟล์คลิฟท์", title: "อะไหล่ช่วงล่างรถโฟล์คลิฟท์การตรวจสอบและเปลี่ยน" },
+          { keyword: "ยางรถโฟล์คลิฟท์ชนิดต่างๆ", title: "ควรเลือกอย่างไรสำหรับยางรถโฟล์คลิฟท์ชนิดต่างๆ แข็ง นิ่ม โฟม" },
+          { keyword: "ล้อและแบริ่งรถโฟล์คลิฟท์", title: "ล้อและแบริ่งรถโฟล์คลิฟท์ เมื่อไหร่ควรเปลี่ยน" },
+          { keyword: "ระบบบังคับเลี้ยว", title: "ระบบบังคับเลี้ยวและอะไหล่รถโฟล์คลิฟท์การดูแลให้คล่องตัว" },
+          { keyword: "โช้คอัพรถโฟล์คลิฟท์", title: "โช้คอัพรถโฟล์คลิฟท์ ความรู้ด้านลดการสั่นสะเทือน" },
+          { keyword: "เพลาและข้อต่อรถโฟล์คลิฟท์", title: "เพลาและข้อต่อรถโฟล์คลิฟท์ควรตรวจสอบอย่างไร" }
+        ]
       },
-      {
-        keyword: "ยางรถโฟล์คลิฟท์ชนิดต่างๆ",
-        title: "ควรเลือกอย่างไรสำหรับยางรถโฟล์คลิฟท์ชนิดต่างๆ แข็ง นิ่ม โฟม"
-      },
-      {
-        keyword: "ล้อและแบริ่งรถโฟล์คลิฟท์",
-        title: "ล้อและแบริ่งรถโฟล์คลิฟท์ เมื่อไหร่ควรเปลี่ยน"
-      },
-      {
-        keyword: "ระบบบังคับเลี้ยว",
-        title: "ระบบบังคับเลี้ยวและอะไหล่รถโฟล์คลิฟท์การดูแลให้คล่องตัว"
-      },
-      {
-        keyword: "โช้คอัพรถโฟล์คลิฟท์",
-        title: "โช้คอัพรถโฟล์คลิฟท์ ความรู้ด้านลดการสั่นสะเทือน"
-      },
-      {
-        keyword: "เพลาและข้อต่อรถโฟล์คลิฟท์",
-        title: "เพลาและข้อต่อรถโฟล์คลิฟท์ควรตรวจสอบอย่างไร"
+      vacuum: {
+        title: "ระบบนำเข้าคีย์เวิร์ดเครื่องซีลสูญญากาศสำหรับอาหาร",
+        subtitle: "คีย์เวิร์ดและชื่อบทความสำหรับการเขียนบทความ SEO เครื่องซีลสูญญากาศอาหาร",
+        prefix: "vacuum-",
+        primaryKeyword: "เครื่องซีลสูญญากาศสำหรับอาหาร",
+        data: [
+          { keyword: "เครื่องซีลสูญญากาศสำหรับอาหาร", title: "เครื่องซีลสูญญากาศสำหรับอาหาร ยืดอายุได้จริงแค่ไหน" },
+          { keyword: "เครื่องซีลสูญญากาศยืดอายุอาหารได้จริงไหม", title: "เครื่องซีลสูญญากาศยืดอายุอาหารได้จริงไหม หลักการทางวิทยาศาสตร์" },
+          { keyword: "อาหารที่เหมาะซีลสูญญากาศ", title: "อาหารที่เหมาะซีลสูญญากาศ มีอะไรบ้าง" },
+          { keyword: "อาหารที่ห้ามซีลสูญญากาศ", title: "อาหารที่ห้ามซีลสูญญากาศ อันตรายถ้าทำผิด" },
+          { keyword: "เครื่องซีลสูญญากาศใช้กับผักผลไม้เพื่อยืดความสดได้ไหม", title: "เครื่องซีลสูญญากาศใช้กับผักผลไม้เพื่อยืดความสดได้ไหม" },
+          { keyword: "เครื่องซีลสูญญากาศอาหารแห้ง", title: "เครื่องซีลสูญญากาศอาหารแห้ง กรอบได้นานแค่ไหน" },
+          { keyword: "เครื่องซีลสูญญากาศอาหารแช่แข็ง", title: "เครื่องซีลสูญญากาศอาหารแช่แข็งกับการป้องกัน Freezer Burn" },
+          { keyword: "เครื่องซีลสูญญากาศสำหรับร้านอาหาร", title: "เครื่องซีลสูญญากาศสำหรับร้านอาหารการเพิ่มประสิทธิภาพครัว" },
+          { keyword: "เครื่องซีลสูญญากาศโรงงานอาหาร", title: "เครื่องซีลสูญญากาศโรงงานอาหาร มาตรฐาน GMP" },
+          { keyword: "เครื่องซีลสูญญากาศ Sous Vide", title: "เครื่องซีลสูญญากาศ Sous Vide ใช้ร่วมกันอย่างไร" }
+        ]
       }
-    ];
+    };
 
-    // Populate table
-    const tableBody = document.getElementById('keywordsTable');
-    dataToImport.forEach((item, idx) => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${idx + 1}</td>
-        <td><span class="keyword-badge">${item.keyword}</span></td>
-        <td>${item.title}</td>
-      `;
-      tableBody.appendChild(tr);
+    let activeCampaignKey = 'forklift';
+
+    function renderTable() {
+      const campaign = campaigns[activeCampaignKey];
+      document.getElementById('pageTitle').innerText = campaign.title;
+      document.getElementById('pageSubtitle').innerText = campaign.subtitle;
+
+      const tableBody = document.getElementById('keywordsTable');
+      tableBody.innerHTML = '';
+      
+      campaign.data.forEach((item, idx) => {
+        const tr = document.createElement('tr');
+        const levelBadgeClass = idx === 0 ? 'level-1' : 'level-2';
+        const levelText = idx === 0 ? 'Lv 1' : 'Lv 2';
+        
+        tr.innerHTML = `
+          <td style="text-align: center;">
+            <input type="checkbox" class="row-checkbox" data-index="${idx}" checked style="transform: scale(1.2); cursor: pointer;" onchange="updateSelectAllState()">
+          </td>
+          <td><span class="level-badge ${levelBadgeClass}">${levelText}</span></td>
+          <td><span class="keyword-badge">${item.keyword}</span></td>
+          <td>${item.title}</td>
+        `;
+        tableBody.appendChild(tr);
+      });
+      updateSelectAllState();
+    }
+
+    function selectCampaign(campaignKey) {
+      activeCampaignKey = campaignKey;
+      document.getElementById('cardForklift').classList.toggle('active', campaignKey === 'forklift');
+      document.getElementById('cardVacuum').classList.toggle('active', campaignKey === 'vacuum');
+      renderTable();
+    }
+
+    function selectOnlyLv2() {
+      const checkboxes = document.querySelectorAll('.row-checkbox');
+      checkboxes.forEach((cb) => {
+        const idx = parseInt(cb.getAttribute('data-index'));
+        cb.checked = idx > 0; // Check only index > 0 (Lv 2)
+      });
+      updateSelectAllState();
+    }
+
+    function toggleAllCheckboxes(checked) {
+      const checkboxes = document.querySelectorAll('.row-checkbox');
+      checkboxes.forEach((cb) => {
+        cb.checked = checked;
+      });
+      document.getElementById('selectAll').checked = checked;
+    }
+
+    function updateSelectAllState() {
+      const checkboxes = document.querySelectorAll('.row-checkbox');
+      const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+      document.getElementById('selectAll').checked = allChecked;
+    }
+
+    function getLoggedInUserEmail() {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.includes('auth-token')) {
+          try {
+            const parsed = JSON.parse(localStorage.getItem(key));
+            if (parsed && parsed.user && parsed.user.email) {
+              return parsed.user.email;
+            }
+          } catch (e) {}
+        }
+      }
+      return null;
+    }
+
+    // Set up Select All event listener
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('selectAll').addEventListener('change', (e) => {
+        toggleAllCheckboxes(e.target.checked);
+      });
     });
 
     document.getElementById('importBtn').addEventListener('click', () => {
+      const email = getLoggedInUserEmail();
+      if (!email || email !== 'kaojaonew@gmail.com') {
+        alert('ขออภัย ระบบนำเข้าคีย์เวิร์ดนี้จำกัดให้ใช้งานได้เฉพาะบัญชี kaojaonew@gmail.com เท่านั้น\n(โปรดเข้าสู่ระบบด้วยบัญชีดังกล่าวในแอปหลักก่อนนำเข้า)');
+        return;
+      }
+
+      const campaign = campaigns[activeCampaignKey];
+      
+      // Get selected indices
+      const checkedBoxes = document.querySelectorAll('.row-checkbox:checked');
+      if (checkedBoxes.length === 0) {
+        alert('กรุณาเลือกอย่างน้อย 1 รายการเพื่อนำเข้า');
+        return;
+      }
+      
+      const selectedIndices = Array.from(checkedBoxes).map(cb => parseInt(cb.getAttribute('data-index')));
+
       // Load current inputs
       const saved = localStorage.getItem('campaign_inputs');
       let current = [];
@@ -368,19 +556,22 @@
         }
       }
 
-      // Convert data to import to ArticleItem structure
-      const newItems = dataToImport.map((item, index) => {
+      // Convert selected data to import to ArticleItem structure
+      const newItems = [];
+      selectedIndices.forEach((index) => {
+        const item = campaign.data[index];
         const base = {
-          id: 'forklift-under-' + Date.now() + '-' + index + '-' + Math.floor(Math.random() * 1000),
+          id: campaign.prefix + Date.now() + '-' + index + '-' + Math.floor(Math.random() * 1000),
           keyword: item.keyword,
           title: item.title,
           language: 'thai'
         };
+        
         if (index > 0) {
-          return {
+          newItems.push({
             ...base,
             overrides: {
-              secondaryKeywords: ["อะไหล่ช่วงล่างรถโฟล์คลิฟท์"],
+              secondaryKeywords: [campaign.primaryKeyword],
               language: "thai",
               targetCountry: "thailand",
               tone: "professional",
@@ -388,9 +579,10 @@
               formality: "formal",
               autoExternalLinks: false
             }
-          };
+          });
+        } else {
+          newItems.push(base);
         }
-        return base;
       });
 
       // Filter out existing duplicates based on keyword
@@ -401,6 +593,11 @@
       const updated = [...current, ...nonDuplicateNewItems];
       localStorage.setItem('campaign_inputs', JSON.stringify(updated));
 
+      // Build success description
+      document.getElementById('successDesc').innerHTML = `
+        คีย์เวิร์ดและชื่อบทความแคมเปญ <strong>${activeCampaignKey === 'forklift' ? 'ช่วงล่างรถโฟล์คลิฟท์' : 'เครื่องซีลสูญญากาศอาหาร'}</strong> ทั้งหมด ${nonDuplicateNewItems.length} รายการ ได้ถูกบรรจุเข้าสู่ระบบนำเข้าคีย์เวิร์ดเรียบร้อยแล้ว (ข้ามรายการคีย์เวิร์ดที่ซ้ำในระบบ)<br><br>คุณสามารถกลับไปที่หน้าหลักของแอปและรีเฟรชเพื่อเริ่มสร้างบทความได้ทันที
+      `;
+
       // Show success overlay
       document.getElementById('successOverlay').style.display = 'flex';
     });
@@ -408,6 +605,9 @@
     function closeSuccess() {
       document.getElementById('successOverlay').style.display = 'none';
     }
+
+    // Initial render
+    renderTable();
   </script>
 </body>
 </html>

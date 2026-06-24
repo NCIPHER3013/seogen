@@ -253,47 +253,135 @@ export default function CampaignSetup() {
       // Ignore uncaught fetch errors silently
     });
 
-    supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
         navigate('/');
       }
     });
+
+    return () => subscription.unsubscribe();
   }, [navigate]);
 
   // Automatic Seeding Logic for empty state
   useEffect(() => {
-    const savedInputs = localStorage.getItem('campaign_inputs');
-    let hasForkliftUndercarriage = false;
-    if (savedInputs) {
-      try {
-        const parsed = JSON.parse(savedInputs);
-        if (Array.isArray(parsed) && parsed.some(item => item.keyword === "อะไหล่ช่วงล่างรถโฟล์คลิฟท์")) {
-          hasForkliftUndercarriage = true;
-        }
-      } catch (e) {}
-    }
+    if (!user) return; // Wait until auth state is loaded
 
-    if (!hasForkliftUndercarriage) {
-      const dataToImport = [
-        { keyword: "อะไหล่ช่วงล่างรถโฟล์คลิฟท์", title: "อะไหล่ช่วงล่างรถโฟล์คลิฟท์การตรวจสอบและเปลี่ยน" },
-        { keyword: "ยางรถโฟล์คลิฟท์ชนิดต่างๆ", title: "ควรเลือกอย่างไรสำหรับยางรถโฟล์คลิฟท์ชนิดต่างๆ แข็ง นิ่ม โฟม" },
-        { keyword: "ล้อและแบริ่งรถโฟล์คลิฟท์", title: "ล้อและแบริ่งรถโฟล์คลิฟท์ เมื่อไหร่ควรเปลี่ยน" },
-        { keyword: "ระบบบังคับเลี้ยว", title: "ระบบบังคับเลี้ยวและอะไหล่รถโฟล์คลิฟท์การดูแลให้คล่องตัว" },
-        { keyword: "โช้คอัพรถโฟล์คลิฟท์", title: "โช้คอัพรถโฟล์คลิฟท์ ความรู้ด้านลดการสั่นสะเทือน" },
-        { keyword: "เพลาและข้อต่อรถโฟล์คลิฟท์", title: "เพลาและข้อต่อรถโฟล์คลิฟท์ควรตรวจสอบอย่างไร" }
-      ];
-      const newItems = dataToImport.map((item, index) => {
-        const base = {
-          id: 'forklift-under-auto-' + Date.now() + '-' + index,
-          keyword: item.keyword,
-          title: item.title,
-          language: 'thai'
-        };
-        if (index > 0) {
+    // ONLY seed the forklift undercarriage campaign if logged in as kaojaonew@gmail.com
+    if (user.email === 'kaojaonew@gmail.com') {
+      const isSeeded = localStorage.getItem('campaign_forklift_under_seeded');
+
+      if (!isSeeded) {
+        const dataToImport = [
+          { keyword: "อะไหล่ช่วงล่างรถโฟล์คลิฟท์", title: "อะไหล่ช่วงล่างรถโฟล์คลิฟท์การตรวจสอบและเปลี่ยน" },
+          { keyword: "ยางรถโฟล์คลิฟท์ชนิดต่างๆ", title: "ควรเลือกอย่างไรสำหรับยางรถโฟล์คลิฟท์ชนิดต่างๆ แข็ง นิ่ม โฟม" },
+          { keyword: "ล้อและแบริ่งรถโฟล์คลิฟท์", title: "ล้อและแบริ่งรถโฟล์คลิฟท์ เมื่อไหร่ควรเปลี่ยน" },
+          { keyword: "ระบบบังคับเลี้ยว", title: "ระบบบังคับเลี้ยวและอะไหล่รถโฟล์คลิฟท์การดูแลให้คล่องตัว" },
+          { keyword: "โช้คอัพรถโฟล์คลิฟท์", title: "โช้คอัพรถโฟล์คลิฟท์ ความรู้ด้านลดการสั่นสะเทือน" },
+          { keyword: "เพลาและข้อต่อรถโฟล์คลิฟท์", title: "เพลาและข้อต่อรถโฟล์คลิฟท์ควรตรวจสอบอย่างไร" }
+        ];
+        const newItems = dataToImport.map((item, index) => {
+          const base = {
+            id: 'forklift-under-auto-' + Date.now() + '-' + index,
+            keyword: item.keyword,
+            title: item.title,
+            language: 'thai'
+          };
+          if (index > 0) {
+            return {
+              ...base,
+              overrides: {
+                secondaryKeywords: ["อะไหล่ช่วงล่างรถโฟล์คลิฟท์"],
+                language: "thai",
+                targetCountry: "thailand",
+                tone: "professional",
+                pov: "third",
+                formality: "formal",
+                autoExternalLinks: false
+              }
+            };
+          }
+          return base;
+        });
+        setInputs(newItems);
+        localStorage.setItem('campaign_inputs', JSON.stringify(newItems));
+        localStorage.setItem('campaign_forklift_under_seeded', 'true');
+      }
+
+      const isVacuumSeeded = localStorage.getItem('campaign_vacuum_seeded');
+      if (!isVacuumSeeded) {
+        const dataToImport = [
+          { keyword: "เครื่องซีลสูญญากาศสำหรับอาหาร", title: "เครื่องซีลสูญญากาศสำหรับอาหาร ยืดอายุได้จริงแค่ไหน" },
+          { keyword: "เครื่องซีลสูญญากาศยืดอายุอาหารได้จริงไหม", title: "เครื่องซีลสูญญากาศยืดอายุอาหารได้จริงไหม หลักการทางวิทยาศาสตร์" },
+          { keyword: "อาหารที่เหมาะซีลสูญญากาศ", title: "อาหารที่เหมาะซีลสูญญากาศ มีอะไรบ้าง" },
+          { keyword: "อาหารที่ห้ามซีลสูญญากาศ", title: "อาหารที่ห้ามซีลสูญญากาศ อันตรายถ้าทำผิด" },
+          { keyword: "เครื่องซีลสูญญากาศใช้กับผักผลไม้เพื่อยืดความสดได้ไหม", title: "เครื่องซีลสูญญากาศใช้กับผักผลไม้เพื่อยืดความสดได้ไหม" },
+          { keyword: "เครื่องซีลสูญญากาศอาหารแห้ง", title: "เครื่องซีลสูญญากาศอาหารแห้ง กรอบได้นานแค่ไหน" },
+          { keyword: "เครื่องซีลสูญญากาศอาหารแช่แข็ง", title: "เครื่องซีลสูญญากาศอาหารแช่แข็งกับการป้องกัน Freezer Burn" },
+          { keyword: "เครื่องซีลสูญญากาศสำหรับร้านอาหาร", title: "เครื่องซีลสูญญากาศสำหรับร้านอาหารการเพิ่มประสิทธิภาพครัว" },
+          { keyword: "เครื่องซีลสูญญากาศโรงงานอาหาร", title: "เครื่องซีลสูญญากาศโรงงานอาหาร มาตรฐาน GMP" },
+          { keyword: "เครื่องซีลสูญญากาศ Sous Vide", title: "เครื่องซีลสูญญากาศ Sous Vide ใช้ร่วมกันอย่างไร" }
+        ];
+        const newItems = dataToImport.map((item, index) => {
+          const base = {
+            id: 'vacuum-auto-' + Date.now() + '-' + index,
+            keyword: item.keyword,
+            title: item.title,
+            language: 'thai'
+          };
+          if (index > 0) {
+            return {
+              ...base,
+              overrides: {
+                secondaryKeywords: ["เครื่องซีลสูญญากาศสำหรับอาหาร"],
+                language: "thai",
+                targetCountry: "thailand",
+                tone: "professional",
+                pov: "third",
+                formality: "formal",
+                autoExternalLinks: false
+              }
+            };
+          }
+          return base;
+        });
+
+        const saved = localStorage.getItem('campaign_inputs');
+        let current = [];
+        if (saved) {
+          try {
+            current = JSON.parse(saved);
+          } catch (e) {}
+        }
+        const existingKeywords = new Set(current.map((c) => c.keyword));
+        const nonDuplicateNewItems = newItems.filter(item => !existingKeywords.has(item.keyword));
+        const updated = [...current, ...nonDuplicateNewItems];
+
+        setInputs(updated);
+        localStorage.setItem('campaign_inputs', JSON.stringify(updated));
+        localStorage.setItem('campaign_vacuum_seeded', 'true');
+      }
+
+      const isVacuumLv2ForcedSeeded = localStorage.getItem('campaign_vacuum_lv2_forced_seeded');
+      if (!isVacuumLv2ForcedSeeded) {
+        const dataToImport = [
+          { keyword: "เครื่องซีลสูญญากาศยืดอายุอาหารได้จริงไหม", title: "เครื่องซีลสูญญากาศยืดอายุอาหารได้จริงไหม หลักการทางวิทยาศาสตร์" },
+          { keyword: "อาหารที่เหมาะซีลสูญญากาศ", title: "อาหารที่เหมาะซีลสูญญากาศ มีอะไรบ้าง" },
+          { keyword: "อาหารที่ห้ามซีลสูญญากาศ", title: "อาหารที่ห้ามซีลสูญญากาศ อันตรายถ้าทำผิด" },
+          { keyword: "เครื่องซีลสูญญากาศใช้กับผักผลไม้เพื่อยืดความสดได้ไหม", title: "เครื่องซีลสูญญากาศใช้กับผักผลไม้เพื่อยืดความสดได้ไหม" },
+          { keyword: "เครื่องซีลสูญญากาศอาหารแห้ง", title: "เครื่องซีลสูญญากาศอาหารแห้ง กรอบได้นานแค่ไหน" },
+          { keyword: "เครื่องซีลสูญญากาศอาหารแช่แข็ง", title: "เครื่องซีลสูญญากาศอาหารแช่แข็งกับการป้องกัน Freezer Burn" },
+          { keyword: "เครื่องซีลสูญญากาศสำหรับร้านอาหาร", title: "เครื่องซีลสูญญากาศสำหรับร้านอาหารการเพิ่มประสิทธิภาพครัว" },
+          { keyword: "เครื่องซีลสูญญากาศโรงงานอาหาร", title: "เครื่องซีลสูญญากาศโรงงานอาหาร มาตรฐาน GMP" },
+          { keyword: "เครื่องซีลสูญญากาศ Sous Vide", title: "เครื่องซีลสูญญากาศ Sous Vide ใช้ร่วมกันอย่างไร" }
+        ];
+        const newItems = dataToImport.map((item, index) => {
           return {
-            ...base,
+            id: 'vacuum-lv2-force-' + Date.now() + '-' + index,
+            keyword: item.keyword,
+            title: item.title,
+            language: 'thai',
             overrides: {
-              secondaryKeywords: ["อะไหล่ช่วงล่างรถโฟล์คลิฟท์"],
+              secondaryKeywords: ["เครื่องซีลสูญญากาศสำหรับอาหาร"],
               language: "thai",
               targetCountry: "thailand",
               tone: "professional",
@@ -302,11 +390,23 @@ export default function CampaignSetup() {
               autoExternalLinks: false
             }
           };
+        });
+
+        const saved = localStorage.getItem('campaign_inputs');
+        let current = [];
+        if (saved) {
+          try {
+            current = JSON.parse(saved);
+          } catch (e) {}
         }
-        return base;
-      });
-      setInputs(newItems);
-      localStorage.setItem('campaign_inputs', JSON.stringify(newItems));
+        const existingKeywords = new Set(current.map((c) => c.keyword));
+        const nonDuplicateNewItems = newItems.filter(item => !existingKeywords.has(item.keyword));
+        const updated = [...current, ...nonDuplicateNewItems];
+
+        setInputs(updated);
+        localStorage.setItem('campaign_inputs', JSON.stringify(updated));
+        localStorage.setItem('campaign_vacuum_lv2_forced_seeded', 'true');
+      }
     }
 
     const savedArticles = localStorage.getItem('campaign_config_generatedArticles');
@@ -316,6 +416,31 @@ export default function CampaignSetup() {
         const parsed = JSON.parse(savedArticles);
         if (Array.isArray(parsed) && parsed.length > 0) {
           hasArticles = true;
+          
+          // Migration to replace old watermarked images for forklift shaft article with new clean images
+          let modified = false;
+          const updatedArticles = parsed.map(article => {
+            if (article.keyword === "เพลาและข้อต่อรถโฟล์คลิฟท์" || article.title === "เพลาและข้อต่อรถโฟล์คลิฟท์ควรตรวจสอบอย่างไร") {
+              if (article.content.includes('/shaft_image_0.jpg')) {
+                return article; // already migrated
+              }
+              const imgPattern = /gemini_img_\w+/g;
+              const matches = article.content.match(imgPattern) || [];
+              let content = article.content;
+              for (let i = 0; i < Math.min(matches.length, 4); i++) {
+                content = content.replace(matches[i], `/shaft_image_${i}.jpg`);
+              }
+              modified = true;
+              return { ...article, content };
+            }
+            return article;
+          });
+          if (modified) {
+            localStorage.setItem('campaign_config_generatedArticles', JSON.stringify(updatedArticles));
+            setTimeout(() => {
+              setGeneratedArticles(updatedArticles);
+            }, 100);
+          }
         }
       } catch (e) {}
     }
@@ -332,7 +457,7 @@ export default function CampaignSetup() {
       setGeneratedArticles([seedArt]);
       localStorage.setItem('campaign_config_generatedArticles', JSON.stringify([seedArt]));
     }
-  }, []);
+  }, [user]);
 
   // Campaign Inputs State
   const [inputs, setInputs] = useState<ArticleItem[]>(() => {
@@ -437,7 +562,7 @@ export default function CampaignSetup() {
   const [sitemaps, setSitemaps] = usePersistentState<string[]>('sitemaps', []);
   const [customApiKey, setCustomApiKey] = usePersistentState('customApiKey', '645139e1a8fc4ed18665660a82c7412d.tWOLRtwBoUBsr8dJ');
   const [customOpenAiApiKey, setCustomOpenAiApiKey] = usePersistentState('customOpenAiApiKey', 'ark-a53fc090-6973-4a82-b47b-5bc5c4c952a4-b1f81');
-  const [textApiModel, setTextApiModel] = usePersistentState('textApiModel', 'glm-5-turbo');
+  const [textApiModel, setTextApiModel] = usePersistentState('textApiModel', 'glm-4.5');
   const [textApiBaseUrl, setTextApiBaseUrl] = usePersistentState('textApiBaseUrl', 'https://api.z.ai/api/coding/paas/v4');
   const [textApiPrompt, setTextApiPrompt] = usePersistentState('textApiPrompt', '');
   const [imageApiModel, setImageApiModel] = usePersistentState('imageApiModel', 'seedream-4-5-251128');
@@ -455,8 +580,8 @@ export default function CampaignSetup() {
     if (!customApiKey || customApiKey === 'a70be79aa9cb48898212205ead1bcd29.Xpy23Bqe6Knurg6d') {
       setCustomApiKey('645139e1a8fc4ed18665660a82c7412d.tWOLRtwBoUBsr8dJ');
     }
-    if (!textApiModel || textApiModel === 'auto' || textApiModel === 'GLM-5-Turbo') {
-      setTextApiModel('glm-5-turbo');
+    if (!textApiModel || textApiModel === 'auto' || textApiModel === 'GLM-5-Turbo' || textApiModel === 'glm-5-turbo') {
+      setTextApiModel('glm-4.5');
     }
     if (!textApiBaseUrl || textApiBaseUrl === 'https://open.bigmodel.cn/api/paas/v4') {
       setTextApiBaseUrl('https://api.z.ai/api/coding/paas/v4');
@@ -676,6 +801,16 @@ export default function CampaignSetup() {
 
       } catch (err: any) {
         if (err.message?.includes('โควต้า') || err.message?.includes('Quota Exceeded') || err.message?.includes('quota') || err.message?.includes('429')) {
+          // Restore all queued items back to inputs
+          setInputs(prev => {
+            const newInputs = [...prev];
+            generatingQueue.forEach(item => {
+              if (!newInputs.some(i => i.id === item.id)) {
+                newInputs.push(item);
+              }
+            });
+            return newInputs;
+          });
           setGeneratingQueue([]);
           setActiveTab("settings");
           
@@ -694,6 +829,12 @@ export default function CampaignSetup() {
           }, 8000);
 
         } else {
+          // Restore the failed input back to inputs list
+          setInputs(prev => {
+            if (prev.some(i => i.id === input.id)) return prev;
+            return [...prev, input];
+          });
+          
           setActiveTab("settings");
           const toast = document.createElement('div');
           toast.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-red-600 text-white rounded-xl px-4 py-3 text-sm font-medium shadow-2xl flex items-center gap-3 z-[9999] animate-in fade-in slide-in-from-bottom-4';
@@ -708,7 +849,7 @@ export default function CampaignSetup() {
     };
 
     processQueue();
-  }, [generatingQueue, language, tone, copywritingFramework, pov, lengthWords, audience, secondaryKeywords, coverToggle, inlineCount, aspectRatio, sitemaps, internalLinks, generatedArticles]); // adding generic deps to ensure closure freshness, though generatedArticles not strictly needed if we use functional prev state.
+  }, [generatingQueue, language, tone, copywritingFramework, pov, lengthWords, audience, secondaryKeywords, coverToggle, inlineCount, aspectRatio, sitemaps, internalLinks]); // removed generatedArticles to prevent state update feedback loop
 
   const startGenerating = (input: ArticleItem) => {
     // Only queue if not already queued
@@ -1282,15 +1423,30 @@ export default function CampaignSetup() {
                           <TableCell className="text-slate-500 py-4">{queueItem.overrides?.language || language}</TableCell>
                           <TableCell className="text-right py-4 pr-6">
                             <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-8 w-8 text-slate-400 hover:text-red-500 transition-colors" 
-                              title="หยุดสร้างบทความ"
+                              variant="outline" 
+                              size="sm" 
+                              className="h-8 text-red-500 border-red-200 hover:bg-red-50 hover:text-red-650 hover:border-red-300 font-medium text-xs px-2.5 rounded-lg transition-all flex items-center gap-1.5"
+                              title="ยกเลิกการสร้างและส่งกลับไปหน้านำเข้า"
                               onClick={() => {
+                                setInputs(prev => {
+                                  if (prev.some(i => i.id === queueItem.id)) return prev;
+                                  return [...prev, queueItem];
+                                });
                                 setGeneratingQueue(prev => prev.filter(q => q.id !== queueItem.id));
+                                setActiveTab("inputs");
+                                
+                                const toast = document.createElement('div');
+                                toast.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white rounded-full px-6 py-3 text-sm font-medium shadow-xl flex items-center gap-3 z-50 animate-in fade-in slide-in-from-bottom-4';
+                                toast.innerHTML = `<svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> ยกเลิกการสร้างและย้ายกลับไปหน้านำเข้าแล้ว`;
+                                document.body.appendChild(toast);
+                                setTimeout(() => {
+                                  toast.classList.add('fade-out', 'slide-out-to-bottom-4');
+                                  setTimeout(() => toast.remove(), 300);
+                                }, 3000);
                               }}
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <X className="w-3.5 h-3.5" />
+                              ยกเลิก
                             </Button>
                           </TableCell>
                         </TableRow>

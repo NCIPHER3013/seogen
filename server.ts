@@ -75,6 +75,7 @@ async function startServer() {
       const isZAIModel = model && (model.toLowerCase().startsWith("glm-") || model.toLowerCase().startsWith("cogview"));
       const isSeedreamModel = model && model.toLowerCase().includes("seedream");
       
+      // ---- IMAGE GENERATION (Seedream / OpenAI image) ----
       if (isImageModel && (apiKey.startsWith("sk-") || apiKey.startsWith("ark-") || hasCustomBaseUrl || isZAIModel || isSeedreamModel)) {
         try {
           let baseUrl = config?.baseUrl?.replace(/\/+$/, '');
@@ -89,65 +90,57 @@ async function startServer() {
           }
           const endpoint = baseUrl.endsWith('/images/generations') ? baseUrl : `${baseUrl}/images/generations`;
 
-          const response = await fetch(endpoint, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${apiKey}`
-            },
-             body: JSON.stringify({
-               model: model,
-               prompt: contents.substring(0, 4000), // OpenAI limits prompt length
-               n: 1,
-               size: (model && model.toLowerCase().includes('seedream'))
-                 ? (config?.aspectRatio === '16:9' ? '2560x1440' : '1920x1920')
-                 : (config?.aspectRatio === '16:9' ? '1024x768' : '1024x1024')
-             })
-          });
+          console.log(`[Server] Image generation via: ${endpoint}, model: ${model}`);
+
+          let imgResponse;
+          try {
+            imgResponse = await fetch(endpoint, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${apiKey}`
+              },
+              body: JSON.stringify({
+                model: model,
+                prompt: contents.substring(0, 4000),
+                n: 1,
+                size: (model && model.toLowerCase().includes('seedream'))
+                  ? (config?.aspectRatio === '16:9' ? '2560x1440' : '1920x1920')
+                  : (config?.aspectRatio === '16:9' ? '1024x768' : '1024x1024'),
+                watermark: false
+              }),
+              signal: AbortSignal.timeout(180000)
+            });
+          } catch (fetchErr: any) {
+            if (fetchErr.name === 'TimeoutError' || fetchErr.name === 'AbortError') {
+              return res.status(500).json({ error: `Seedream API หมดเวลา (Timeout 180s) - กรุณาลองใหม่` });
+            }
+            return res.status(500).json({ error: `เชื่อมต่อ Seedream ไม่ได้: ${fetchErr.message}` });
+          }
           
           let data;
-          const respText = await response.text();
+          const respText = await imgResponse.text();
           try {
              data = JSON.parse(respText);
           } catch(e) {
-             return res.status(500).json({ error: `Non-JSON proxy response (${response.status}): ${respText.substring(0, 100)}` });
+             return res.status(500).json({ error: `Non-JSON image response (${imgResponse.status}): ${respText.substring(0, 200)}` });
           }
 
-          if (!response.ok && (data?.error?.message?.includes('Insufficient balance') || data?.error?.message?.includes('resource package') || data?.error?.code === 'insufficient_quota')) {
-              console.log('[Server] Image API insufficient balance for', model, '- falling back to Pollinations AI');
-              const prompt = contents.substring(0, 1000);
-              const encodedPrompt = encodeURIComponent(prompt);
-              const fallbackImageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=800&height=500&nologo=true&model=flux&enhance=true`;
-              
-              const imageRes = await fetch(fallbackImageUrl);
-              if (imageRes.ok) {
-                  const arrayBuffer = await imageRes.arrayBuffer();
-                  const buffer = Buffer.from(arrayBuffer);
-                  const base64Data = buffer.toString('base64');
-                  return res.json({
-                    candidates: [
-                      {
-                        content: { parts: [{ inlineData: { data: base64Data, mimeType: "image/jpeg" } }] }
-                      }
-                    ]
-                  });
-              }
-          }
-
-          if (!response.ok) {
-             return res.status(500).json({ error: data.error?.message || data.error || JSON.stringify(data) });
+          if (!imgResponse.ok) {
+            const errMsg = data.error?.message || data.error || JSON.stringify(data);
+            console.error(`[Server] Seedream API error (${imgResponse.status}):`, errMsg);
+            return res.status(imgResponse.status).json({ error: errMsg });
           }
           
           let base64Image = "";
           if (data.data && data.data[0] && data.data[0].b64_json) {
               base64Image = data.data[0].b64_json;
           } else if (data.data && data.data[0] && data.data[0].url) {
-              // try to fetch the URL if b64_json is not provided
               const fetchImg = await fetch(data.data[0].url);
               const imgBuf = await fetchImg.arrayBuffer();
               base64Image = Buffer.from(imgBuf).toString('base64');
           } else {
-              return res.status(500).json({ error: "No image data returned from API: " + JSON.stringify(data) });
+              return res.status(500).json({ error: "No image data returned from Seedream: " + JSON.stringify(data) });
           }
           
           return res.json({
@@ -167,52 +160,19 @@ async function startServer() {
             ]
           });
         } catch (e: any) {
-           return res.status(500).json({ error: e.message || "Unknown proxy error" });
+           return res.status(500).json({ error: e.message || "Unknown image proxy error" });
         }
       }
 
       const isImageReq = contents && !contents.includes("System Instructions:");
       if (isImageReq) {
-        // Use Pollinations AI for reliable and free image generation 
-        // bypassing any model limitations and quotas
-        try {
-          const prompt = contents.substring(0, 1000);
-          const encodedPrompt = encodeURIComponent(prompt);
-          const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=800&height=500&nologo=true&model=flux&enhance=true`;
-          
-          const imageRes = await fetch(imageUrl);
-          if (!imageRes.ok) {
-            return res.status(500).json({ error: "Failed to generate image via Pollinations AI" });
-          }
-          
-          const arrayBuffer = await imageRes.arrayBuffer();
-          const buffer = Buffer.from(arrayBuffer);
-          const base64Data = buffer.toString('base64');
-          
-          return res.json({
-            candidates: [
-              {
-                content: {
-                  parts: [
-                    {
-                      inlineData: {
-                        data: base64Data,
-                        mimeType: "image/jpeg"
-                      }
-                    }
-                  ]
-                }
-              }
-            ]
-          });
-        } catch (pollError: any) {
-           return res.status(500).json({ error: pollError.message || "Pollinations Image Error" });
-        }
+        return res.status(400).json({ error: "Image generation requires Seedream API key. Please configure image API key in settings." });
       }
 
+      // ---- TEXT GENERATION (Z.ai / Gemini) ----
       const isOpenAI = apiKey.startsWith("sk-") || apiKey.includes(".") || hasCustomBaseUrl || (model && (model.startsWith("gpt-") || model.startsWith("o1") || model.startsWith("o3") || model.toLowerCase().startsWith("glm-") || model.toLowerCase().startsWith("claude-")));
       
-      console.log(`[Server] Generating content with model: ${model}, isOpenAI: ${isOpenAI}, isImageModel: ${isImageModel}`);
+      console.log(`[Server] Text generation model: ${model}, isOpenAI: ${isOpenAI}`);
       
       if (isOpenAI) {
           let baseUrl = config?.baseUrl?.replace(/\/+$/, '');
@@ -224,50 +184,74 @@ async function startServer() {
              }
           }
           const endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
-          
-          const actualModel = model || "gpt-4o-mini";
-          const response = await fetch(endpoint, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-              model: actualModel,
-              messages: [{ role: "user", content: contents }]
-            })
-          });
-          
-          let data;
-          const respText = await response.text();
+          const actualModel = model || "glm-4.5";
+
+          console.log(`[Server] Z.ai request → ${endpoint}, model: ${actualModel}`);
+
+          let response;
           try {
-             data = JSON.parse(respText);
-          } catch(e) {
-             return res.status(500).json({ error: `Non-JSON proxy response (${response.status}): ${respText.substring(0, 100)}` });
-          }
-          
-          // Fallback logic for text models when quota/balance runs out
-          if (!response.ok && (data?.error?.message?.includes('Insufficient balance') || data?.error?.message?.includes('resource package') || data?.error?.code === 'insufficient_quota' || response.status === 429)) {
-              console.log(`[Server] Text API insufficient balance/quota for ${actualModel} - falling back to Pollinations AI`);
-              const fallbackResponse = await fetch('https://text.pollinations.ai/', {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    messages: [{ role: "user", content: contents }]
-                })
-              });
-              if (fallbackResponse.ok) {
-                  const textOutput = await fallbackResponse.text();
-                  return res.json({ text: textOutput });
-              }
+            response = await fetch(endpoint, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${apiKey}`
+              },
+              body: JSON.stringify({
+                model: actualModel,
+                messages: [{ role: "user", content: contents }],
+                stream: true
+              }),
+              signal: AbortSignal.timeout(900000)
+            });
+          } catch (fetchErr: any) {
+            if (fetchErr.name === 'TimeoutError' || fetchErr.name === 'AbortError') {
+              return res.status(500).json({ error: `Z.ai API หมดเวลา (Timeout 15 นาที) — กรุณาลองใหม่ หรือปรับลดความยาวเนื้อหาลง` });
+            }
+            return res.status(500).json({ error: `เชื่อมต่อ Z.ai ไม่ได้: ${fetchErr.message}` });
           }
 
           if (!response.ok) {
-            return res.status(500).json({ error: data.error?.message || data.error || JSON.stringify(data) });
+            let errMsg = `HTTP Error ${response.status}`;
+            try {
+              const errorData = await response.json();
+              errMsg = errorData.error?.message || errorData.error || JSON.stringify(errorData);
+            } catch (e) {
+              errMsg = await response.text();
+            }
+            console.error(`[Server] Z.ai API error (${response.status}):`, errMsg);
+            return res.status(response.status).json({ error: errMsg });
           }
-          return res.json({ text: data.choices[0].message.content });
+
+          let fullText = "";
+          let buffer = "";
+          if (response.body) {
+            // @ts-ignore - Node.js fetch body is a ReadableStream
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+            let done = false;
+            while (!done) {
+              const { value, done: readerDone } = await reader.read();
+              done = readerDone;
+              if (value) {
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || "";
+                for (const line of lines) {
+                  const trimmedLine = line.trim();
+                  if (trimmedLine.startsWith('data: ') && trimmedLine !== 'data: [DONE]') {
+                    try {
+                      const dataObj = JSON.parse(trimmedLine.substring(6));
+                      if (dataObj.choices?.[0]?.delta?.content) {
+                        fullText += dataObj.choices[0].delta.content;
+                      }
+                    } catch (e) {}
+                  }
+                }
+              }
+            }
+          }
+          
+          return res.json({ text: fullText });
       } else {
         const ai = new GoogleGenAI({ apiKey });
         const response = await ai.models.generateContent({
@@ -294,7 +278,8 @@ async function startServer() {
       const response = await fetch(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
+        },
+        signal: AbortSignal.timeout(15000)
       });
       const html = await response.text();
       const text = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')

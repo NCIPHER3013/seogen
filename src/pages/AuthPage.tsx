@@ -17,11 +17,13 @@ export default function AuthPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.onAuthStateChange((event, session) => {
-      if (session) {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session && window.location.pathname === '/') {
         navigate('/dashboard');
       }
     });
+    
+    return () => subscription.unsubscribe();
   }, [navigate]);
 
   const handleEmailAuth = async (e: React.FormEvent) => {

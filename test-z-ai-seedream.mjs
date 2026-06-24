@@ -1,4 +1,3 @@
-import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 
 dotenv.config({ path: '.env.local' });
@@ -58,7 +57,8 @@ async function testImage() {
       model: 'seedream-4-5-251128',
       prompt: 'A sleek modern forklift inside a futuristic warehouse, 3d render',
       n: 1,
-      size: '2560x1440'
+      size: '2560x1440',
+      watermark: false
     };
     
     console.log(`Sending request to ${url} with model seedream-4-5-251128...`);

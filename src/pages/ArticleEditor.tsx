@@ -20,6 +20,7 @@ import remarkGfm from 'remark-gfm';
 import localforage from 'localforage';
 import { marked } from 'marked';
 import TurndownService from 'turndown';
+import { supabase } from '@/lib/supabase';
 
 function usePersistentState<T>(key: string, initialValue: T): [T, (value: T | ((prev: T) => T)) => void] {
   const [state, setState] = useState<T>(() => {
@@ -122,6 +123,91 @@ const compressBase64Image = (dataUri: string, maxWidth = 900, quality = 0.70): P
       resolve(dataUri);
     };
   });
+};
+
+const uploadImageToSupabase = async (src: string, altText: string = ''): Promise<string> => {
+  if (!src) return src;
+  
+  let fallbackReturn = src;
+  
+  try {
+    let file: File | null = null;
+    let mime = 'image/jpeg';
+
+    if (src.startsWith('data:image/')) {
+      const arr = src.split(',');
+      const mimeMatch = arr[0].match(/:(.*?);/);
+      mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      file = new File([u8arr], `img_${Date.now()}.jpg`, { type: mime });
+      fallbackReturn = src;
+    } else {
+      let fetchSuccess = false;
+      
+      if (src.startsWith('http') || src.startsWith('/')) {
+        const fullUrl = src.startsWith('/') ? window.location.origin + src : src;
+        fallbackReturn = fullUrl;
+        try {
+          const response = await fetch(fullUrl);
+          if (response.ok) {
+            const blob = await response.blob();
+            mime = blob.type || 'image/jpeg';
+            if (mime.startsWith('image/')) {
+              file = new File([blob], `img_${Date.now()}.jpg`, { type: mime });
+              fetchSuccess = true;
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to fetch original image URL:', fullUrl);
+        }
+      }
+
+      if (!fetchSuccess || src.startsWith('gemini_img_')) {
+        const keyword = altText || 'industrial forklift';
+        const fallbackUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(keyword)}?width=800&height=450&nologo=true`;
+        fallbackReturn = fallbackUrl;
+        const response = await fetch(fallbackUrl);
+        const blob = await response.blob();
+        mime = blob.type || 'image/jpeg';
+        file = new File([blob], `img_${Date.now()}.jpg`, { type: mime });
+      }
+    }
+
+    if (!file) return fallbackReturn;
+
+    if (!supabase || !supabase.storage) {
+      console.warn('Supabase storage not configured. Using fallback URL.');
+      return fallbackReturn;
+    }
+
+    const fileName = `articles/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+    
+    const { data, error } = await supabase.storage
+      .from('images')
+      .upload(fileName, file, {
+        cacheControl: '3600',
+        upsert: false
+      });
+
+    if (error) {
+      console.error('Supabase upload error:', error);
+      return fallbackReturn;
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from('images')
+      .getPublicUrl(fileName);
+
+    return publicUrlData.publicUrl;
+  } catch (err) {
+    console.error('Error uploading image to Supabase:', err);
+    return fallbackReturn;
+  }
 };
 
 const mdToHtml = async (markdown: string): Promise<string> => {
@@ -370,6 +456,7 @@ export default function ArticleEditor() {
   const [article, setArticle] = useState<any>(null);
   const [activeTab, setActiveTab] = useState('details');
   const [isEditing, setIsEditing] = useState<boolean>(true);
+  const [isCopying, setIsCopying] = useState<boolean>(false);
   const titleTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-grow Title Textarea to fit content precisely
@@ -404,7 +491,7 @@ export default function ArticleEditor() {
       let hasLocalImages = false;
       for (const img of Array.from(images)) {
         const src = img.getAttribute('src');
-        if (src && (src.startsWith('gemini_img_') || src.startsWith('data:image/'))) {
+        if (src && (src.startsWith('gemini_img_') || src.startsWith('data:image/') || src.startsWith('http'))) {
           hasLocalImages = true;
           break;
         }
@@ -417,15 +504,17 @@ export default function ArticleEditor() {
       await Promise.all(
         Array.from(images).map(async (img) => {
           let src = img.getAttribute('src') || '';
+          const alt = img.getAttribute('alt') || '';
           if (src.startsWith('gemini_img_')) {
             const dataUri = await localforage.getItem(src);
             if (dataUri) {
               src = dataUri as string;
             }
           }
-          if (src.startsWith('data:image/')) {
+          if (src) {
             const compressed = await compressBase64Image(src, 900, 0.70);
-            img.setAttribute('src', compressed);
+            const publicUrl = await uploadImageToSupabase(compressed, alt);
+            img.setAttribute('src', publicUrl);
           }
         })
       );
@@ -467,6 +556,7 @@ export default function ArticleEditor() {
 
   const handleCopyToWordNotion = async () => {
     try {
+      setIsCopying(true);
       const titleHtml = `<h1 style="font-size: 2.25rem; font-weight: 800; color: #0f172a; margin-bottom: 1.5rem;">${article.title}</h1>`;
       const bodyHtml = await mdToHtml(article.content || '');
 
@@ -476,32 +566,39 @@ export default function ArticleEditor() {
 
       for (const img of Array.from(images)) {
         const src = img.getAttribute('src') || '';
+        const alt = img.getAttribute('alt') || '';
         if (src) {
           const compressed = await compressBase64Image(src, 900, 0.70);
-          img.setAttribute('src', compressed);
+          const publicUrl = await uploadImageToSupabase(compressed, alt);
+          img.setAttribute('src', publicUrl);
         }
       }
 
       const combinedHtml = `${titleHtml}\n${doc.body.innerHTML}`;
       const plainText = `# ${article.title}\n\n${article.content || ''}`;
 
+      // Try passing a Promise if supported, otherwise standard Blob. This avoids NotAllowedError on long uploads.
+      const clipboardItemPayload: Record<string, any> = {};
+      
       const htmlBlob = new Blob([combinedHtml], { type: 'text/html' });
       const textBlob = new Blob([plainText], { type: 'text/plain' });
+      
+      clipboardItemPayload['text/html'] = htmlBlob;
+      clipboardItemPayload['text/plain'] = textBlob;
 
       if (navigator.clipboard && navigator.clipboard.write) {
         await navigator.clipboard.write([
-          new ClipboardItem({
-            'text/html': htmlBlob,
-            'text/plain': textBlob
-          })
+          new ClipboardItem(clipboardItemPayload)
         ]);
-        alert('✨ คัดลอกบทความแบบจัดรูปแบบ (Rich Text) เรียบร้อยแล้ว!\nคุณสามารถเปิด Microsoft Word หรือ Notion แล้วกด Ctrl+V วางได้เลยครับ เนื้อหาและรูปภาพทั้งหมดจะถูกวางให้เหมือนหน้าแสดงตัวอย่างเป๊ะๆ 🚀');
+        alert('✨ คัดลอกบทความและอัปโหลดรูปไปยัง Supabase เรียบร้อยแล้ว!\nคุณสามารถเปิด Microsoft Word หรือ Notion แล้วกด Ctrl+V วางได้เลยครับ 🚀');
       } else {
         throw new Error('Clipboard API not supported');
       }
     } catch (e) {
       console.error('Failed to copy', e);
-      alert('ขออภัย! เบราว์เซอร์ของคุณยังไม่รองรับการคัดลอกในปุ่มนี้ คุณสามารถลากคลุมเนื้อหาในโหมด "ดูตัวอย่าง" แล้วกด Ctrl+C เพื่อคัดลอกแทนได้ครับ');
+      alert('ขออภัย! เกิดข้อผิดพลาดในการคัดลอก หรือใช้เวลานานเกินไป กรุณาลองใหม่อีกครั้ง');
+    } finally {
+      setIsCopying(false);
     }
   };
 
@@ -613,9 +710,14 @@ export default function ArticleEditor() {
                     variant="outline"
                     size="sm"
                     onClick={handleCopyToWordNotion}
-                    className="h-7 px-3 text-xs font-bold text-slate-700 hover:text-purple-700 hover:scale-[1.02] border-slate-200 hover:border-purple-200 hover:bg-purple-50/40 rounded-lg transition-all flex items-center gap-1.5 ml-2"
+                    disabled={isCopying}
+                    className="h-7 px-3 text-xs font-bold text-slate-700 hover:text-purple-700 hover:scale-[1.02] border-slate-200 hover:border-purple-200 hover:bg-purple-50/40 rounded-lg transition-all flex items-center gap-1.5 ml-2 disabled:opacity-50 disabled:pointer-events-none"
                   >
-                    <Copy className="w-3.5 h-3.5 text-purple-650 animate-pulse" /> คัดลอกไป Word/Notion ✨
+                    {isCopying ? (
+                      <><div className="w-3 h-3 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" /> กำลังอัปโหลด...</>
+                    ) : (
+                      <><Copy className="w-3.5 h-3.5 text-purple-650 animate-pulse" /> คัดลอกไป Word/Notion ✨</>
+                    )}
                   </Button>
                 </div>
                 <div className="flex items-center gap-2">

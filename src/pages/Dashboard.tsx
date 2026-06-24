@@ -23,11 +23,13 @@ export default function Dashboard() {
       // Ignore uncaught fetch errors silently
     });
 
-    supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
         navigate('/');
       }
     });
+
+    return () => subscription.unsubscribe();
   }, [navigate]);
 
   const handleSignOut = async () => {
