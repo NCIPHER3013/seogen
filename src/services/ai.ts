@@ -299,7 +299,7 @@ Output the article in Markdown format. Use proper heading tags (H1, H2, H3), bul
 
         try {
           const imageRequestModel = (!config.imageApiModel || config.imageApiModel === 'auto')
-              ? (imageGenApiKey.startsWith('ark-') ? 'seedream-4-5-251128' : 'gpt-image-2')
+              ? (imageGenApiKey.startsWith('ark-') ? 'seedream-4-0-250828' : 'gpt-image-2')
               : config.imageApiModel;
 
           const imageRes = await fetch('/api/gemini/generate', {

@@ -104,9 +104,11 @@ async function startServer() {
                 model: model,
                 prompt: contents.substring(0, 4000),
                 n: 1,
-                size: (model && model.toLowerCase().includes('seedream'))
-                  ? (config?.aspectRatio === '16:9' ? '2560x1440' : '1920x1920')
-                  : (config?.aspectRatio === '16:9' ? '1024x768' : '1024x1024'),
+                size: (model && model.toLowerCase().includes('seedream-4-0'))
+                  ? (config?.aspectRatio === '16:9' ? '1280x720' : '1024x1024')
+                  : (model && model.toLowerCase().includes('seedream'))
+                    ? (config?.aspectRatio === '16:9' ? '2560x1440' : '1920x1920')
+                    : (config?.aspectRatio === '16:9' ? '1024x768' : '1024x1024'),
                 watermark: false
               }),
               signal: AbortSignal.timeout(180000)
