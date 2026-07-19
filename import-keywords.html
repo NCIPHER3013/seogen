@@ -123,7 +123,7 @@
     /* Campaign Selector Card Style */
     .campaign-selector {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
       gap: 1.25rem;
       margin-bottom: 2rem;
     }
@@ -374,6 +374,14 @@
         <h3>เครื่องซีลสูญญากาศอาหาร</h3>
         <p>10 คีย์เวิร์ด (Food Vacuum Sealer)</p>
       </div>
+      <div class="campaign-card" id="cardSpecialtyForklift" onclick="selectCampaign('specialtyForklift')">
+        <h3>รถโฟล์คลิฟท์เฉพาะทาง</h3>
+        <p>6 คีย์เวิร์ด (Specialty Forklifts)</p>
+      </div>
+      <div class="campaign-card" id="cardSafetyForklift" onclick="selectCampaign('safetyForklift')">
+        <h3>ความปลอดภัยรถโฟล์คลิฟท์</h3>
+        <p>6 คีย์เวิร์ด (Forklift Safety)</p>
+      </div>
     </div>
 
     <div class="table-container">
@@ -444,6 +452,34 @@
           { keyword: "เครื่องซีลสูญญากาศโรงงานอาหาร", title: "เครื่องซีลสูญญากาศโรงงานอาหาร มาตรฐาน GMP" },
           { keyword: "เครื่องซีลสูญญากาศ Sous Vide", title: "เครื่องซีลสูญญากาศ Sous Vide ใช้ร่วมกันอย่างไร" }
         ]
+      },
+      specialtyForklift: {
+        title: "ระบบนำเข้าคีย์เวิร์ดรถโฟล์คลิฟท์เฉพาะทาง",
+        subtitle: "คีย์เวิร์ดและชื่อบทความสำหรับการเขียนบทความ SEO รถโฟล์คลิฟท์เฉพาะทาง",
+        prefix: "forklift-specialty-",
+        primaryKeyword: "รถโฟล์คลิฟท์เฉพาะทาง",
+        data: [
+          { keyword: "รถโฟล์คลิฟท์เฉพาะทาง", title: "รถโฟล์คลิฟท์เฉพาะทางควรเลือกแบบไหนให้เหมาะกับงานพิเศษ" },
+          { keyword: "Reach Truck คืออะไร", title: "Reach Truck คืออะไร เหมาะกับคลังสินค้าแบบไหน" },
+          { keyword: "รถโฟล์คลิฟท์ยืนขับ vs นั่งขับ", title: "รถโฟล์คลิฟท์ยืนขับ vs นั่งขับ เลือกแบบไหนดี" },
+          { keyword: "รถโฟล์คลิฟท์สำหรับพื้นที่ไม่เรียบ", title: "รถโฟล์คลิฟท์สำหรับพื้นที่ไม่เรียบ ทนทานกว่าแบบปกติอย่างไร" },
+          { keyword: "รถโฟล์คลิฟท์แบบ 4 ล้อ", title: "รถโฟล์คลิฟท์แบบ 4 ล้อ เสถียรภาพสูงกว่าอย่างไร" },
+          { keyword: "รถโฟล์คลิฟท์สำหรับงานในอาคาร", title: "รถโฟล์คลิฟท์สำหรับงานในอาคารกับเงียบและไร้มลพิษ" }
+        ]
+      },
+      safetyForklift: {
+        title: "ระบบนำเข้าคีย์เวิร์ดอุปกรณ์ความปลอดภัยของรถโฟล์คลิฟท์",
+        subtitle: "คีย์เวิร์ดและชื่อบทความสำหรับการเขียนบทความ SEO อุปกรณ์ความปลอดภัยของรถโฟล์คลิฟท์",
+        prefix: "forklift-safety-",
+        primaryKeyword: "อุปกรณ์ความปลอดภัยของรถโฟล์คลิฟท์",
+        data: [
+          { keyword: "อุปกรณ์ความปลอดภัยของรถโฟล์คลิฟท์", title: "อุปกรณ์ความปลอดภัยของรถโฟล์คลิฟท์ ต้องมีอะไรบ้าง" },
+          { keyword: "พนักพิงโหลดของรถโฟล์คลิฟท์", title: "พนักพิงโหลดของรถโฟล์คลิฟท์กับมาตรฐานและความสำคัญ" },
+          { keyword: "หลังคาป้องกันรถโฟล์คลิฟท์ Overhead Guard", title: "หลังคาป้องกันรถโฟล์คลิฟท์ Overhead Guard คืออะไร" },
+          { keyword: "ไฟเตือนและสัญญาณเสียงรถโฟล์คลิฟท์", title: "ไฟเตือนและสัญญาณเสียงรถโฟล์คลิฟท์ตามที่กฎหมายกำหนด" },
+          { keyword: "ระบบเบรคฉุกเฉินรถโฟล์คลิฟท์", title: "ระบบเบรคฉุกเฉินรถโฟล์คลิฟท์นั้นทำงานอย่างไร" },
+          { keyword: "กระจกมองหลังของรถโฟล์คลิฟท์", title: "กระจกมองหลังของรถโฟล์คลิฟท์ จำเป็นไหมในทุกสภาพงาน" }
+        ]
       }
     };
 
@@ -477,8 +513,11 @@
 
     function selectCampaign(campaignKey) {
       activeCampaignKey = campaignKey;
-      document.getElementById('cardForklift').classList.toggle('active', campaignKey === 'forklift');
-      document.getElementById('cardVacuum').classList.toggle('active', campaignKey === 'vacuum');
+      document.querySelectorAll('.campaign-card').forEach(card => card.classList.remove('active'));
+      const activeCard = document.getElementById('card' + campaignKey.charAt(0).toUpperCase() + campaignKey.slice(1));
+      if (activeCard) {
+        activeCard.classList.add('active');
+      }
       renderTable();
     }
 
@@ -499,6 +538,7 @@
       document.getElementById('selectAll').checked = checked;
     }
 
+    // Fix selectAll state
     function updateSelectAllState() {
       const checkboxes = document.querySelectorAll('.row-checkbox');
       const allChecked = Array.from(checkboxes).every(cb => cb.checked);
@@ -593,9 +633,16 @@
       const updated = [...current, ...nonDuplicateNewItems];
       localStorage.setItem('campaign_inputs', JSON.stringify(updated));
 
+      const campaignNames = {
+        forklift: 'ช่วงล่างรถโฟล์คลิฟท์',
+        vacuum: 'เครื่องซีลสูญญากาศอาหาร',
+        specialtyForklift: 'รถโฟล์คลิฟท์เฉพาะทาง',
+        safetyForklift: 'อุปกรณ์ความปลอดภัยของรถโฟล์คลิฟท์'
+      };
+
       // Build success description
       document.getElementById('successDesc').innerHTML = `
-        คีย์เวิร์ดและชื่อบทความแคมเปญ <strong>${activeCampaignKey === 'forklift' ? 'ช่วงล่างรถโฟล์คลิฟท์' : 'เครื่องซีลสูญญากาศอาหาร'}</strong> ทั้งหมด ${nonDuplicateNewItems.length} รายการ ได้ถูกบรรจุเข้าสู่ระบบนำเข้าคีย์เวิร์ดเรียบร้อยแล้ว (ข้ามรายการคีย์เวิร์ดที่ซ้ำในระบบ)<br><br>คุณสามารถกลับไปที่หน้าหลักของแอปและรีเฟรชเพื่อเริ่มสร้างบทความได้ทันที
+        คีย์เวิร์ดและชื่อบทความแคมเปญ <strong>${campaignNames[activeCampaignKey]}</strong> ทั้งหมด ${nonDuplicateNewItems.length} รายการ ได้ถูกบรรจุเข้าสู่ระบบนำเข้าคีย์เวิร์ดเรียบร้อยแล้ว (ข้ามรายการคีย์เวิร์ดที่ซ้ำในระบบ)<br><br>คุณสามารถกลับไปที่หน้าหลักของแอปและรีเฟรชเพื่อเริ่มสร้างบทความได้ทันที
       `;
 
       // Show success overlay

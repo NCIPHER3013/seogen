@@ -3,6 +3,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import cors from "cors";
 import path from "path";
+import https from "https";
 
 async function startServer() {
   const app = express();
@@ -11,6 +12,41 @@ async function startServer() {
   app.use(cors());
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+  // ใช้ https module โดยตรงเพื่อหลีกเลี่ยง Headers Timeout Error ของ Node.js native fetch
+  function fetchHttpsJson(url: string, body: string, headers: Record<string, string>, timeoutMs = 900000): Promise<{ status: number; data: any }> {
+    return new Promise((resolve, reject) => {
+      const urlObj = new URL(url);
+      const req = https.request({
+        hostname: urlObj.hostname,
+        port: 443,
+        path: urlObj.pathname + urlObj.search,
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Length': Buffer.byteLength(body),
+        },
+        timeout: timeoutMs,
+      }, (res) => {
+        let rawData = '';
+        res.on('data', (chunk: Buffer) => { rawData += chunk.toString(); });
+        res.on('end', () => {
+          try {
+            resolve({ status: res.statusCode || 500, data: JSON.parse(rawData) });
+          } catch (e) {
+            resolve({ status: res.statusCode || 500, data: rawData });
+          }
+        });
+      });
+      req.on('error', (err) => reject(err));
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('Timeout'));
+      });
+      req.write(body);
+      req.end();
+    });
+  }
 
   // API proxy route using standard Gemini API
   app.post("/api/proxy/completions", async (req, res) => {
@@ -78,7 +114,7 @@ async function startServer() {
       // ---- IMAGE GENERATION (Seedream / OpenAI image) ----
       if (isImageModel && (apiKey.startsWith("sk-") || apiKey.startsWith("ark-") || hasCustomBaseUrl || isZAIModel || isSeedreamModel)) {
         try {
-          let baseUrl = config?.baseUrl?.replace(/\/+$/, '');
+          let baseUrl = (config?.baseUrl && config.baseUrl !== 'undefined' && config.baseUrl.trim()) ? config.baseUrl.replace(/\/+$/, '').trim() : '';
           if (!baseUrl) {
              if (model && (model.toLowerCase().startsWith("glm-") || model.toLowerCase().startsWith("cogview"))) {
                   baseUrl = "https://open.bigmodel.cn/api/paas/v4";
@@ -174,10 +210,10 @@ async function startServer() {
       // ---- TEXT GENERATION (Z.ai / Gemini) ----
       const isOpenAI = apiKey.startsWith("sk-") || apiKey.includes(".") || hasCustomBaseUrl || (model && (model.startsWith("gpt-") || model.startsWith("o1") || model.startsWith("o3") || model.toLowerCase().startsWith("glm-") || model.toLowerCase().startsWith("claude-")));
       
-      console.log(`[Server] Text generation model: ${model}, isOpenAI: ${isOpenAI}`);
+      console.log(`[Server] Text generation model: ${model}, isOpenAI: ${isOpenAI}, config.baseUrl: "${config?.baseUrl}", hasCustomBaseUrl: ${hasCustomBaseUrl}`);
       
       if (isOpenAI) {
-          let baseUrl = config?.baseUrl?.replace(/\/+$/, '');
+          let baseUrl = (config?.baseUrl && config.baseUrl !== 'undefined' && config.baseUrl.trim()) ? config.baseUrl.replace(/\/+$/, '').trim() : '';
           if (!baseUrl) {
              if (model && model.toLowerCase().startsWith("glm-")) {
                   baseUrl = "https://api.z.ai/api/coding/paas/v4";
@@ -186,73 +222,45 @@ async function startServer() {
              }
           }
           const endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
-          const actualModel = model || "glm-4.5";
+          const actualModel = model || "glm-5";
 
           console.log(`[Server] Z.ai request → ${endpoint}, model: ${actualModel}`);
 
-          let response;
+          let responseData: { status: number; data: any };
           try {
-            response = await fetch(endpoint, {
-              method: "POST",
-              headers: {
+            responseData = await fetchHttpsJson(
+              endpoint,
+              JSON.stringify({
+                model: actualModel,
+                messages: [{ role: "user", content: contents }]
+              }),
+              {
                 "Content-Type": "application/json",
                 "Authorization": `Bearer ${apiKey}`
-              },
-              body: JSON.stringify({
-                model: actualModel,
-                messages: [{ role: "user", content: contents }],
-                stream: true
-              }),
-              signal: AbortSignal.timeout(900000)
-            });
+              }
+            );
           } catch (fetchErr: any) {
-            if (fetchErr.name === 'TimeoutError' || fetchErr.name === 'AbortError') {
+            console.error(`[Server] Z.ai fetch failed: ${fetchErr.message}`, fetchErr.cause);
+            if (fetchErr.message === 'Timeout') {
               return res.status(500).json({ error: `Z.ai API หมดเวลา (Timeout 15 นาที) — กรุณาลองใหม่ หรือปรับลดความยาวเนื้อหาลง` });
             }
             return res.status(500).json({ error: `เชื่อมต่อ Z.ai ไม่ได้: ${fetchErr.message}` });
           }
 
-          if (!response.ok) {
-            let errMsg = `HTTP Error ${response.status}`;
-            try {
-              const errorData = await response.json();
-              errMsg = errorData.error?.message || errorData.error || JSON.stringify(errorData);
-            } catch (e) {
-              errMsg = await response.text();
+          const { status, data } = responseData;
+          if (status < 200 || status >= 300) {
+            let errMsg = `HTTP Error ${status}`;
+            if (typeof data === 'object' && data !== null) {
+              errMsg = data.error?.message || data.error || JSON.stringify(data);
+            } else if (typeof data === 'string') {
+              errMsg = data;
             }
-            console.error(`[Server] Z.ai API error (${response.status}):`, errMsg);
-            return res.status(response.status).json({ error: errMsg });
+            console.error(`[Server] Z.ai API error (${status}):`, errMsg);
+            return res.status(status).json({ error: errMsg });
           }
 
-          let fullText = "";
-          let buffer = "";
-          if (response.body) {
-            // @ts-ignore - Node.js fetch body is a ReadableStream
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder("utf-8");
-            let done = false;
-            while (!done) {
-              const { value, done: readerDone } = await reader.read();
-              done = readerDone;
-              if (value) {
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || "";
-                for (const line of lines) {
-                  const trimmedLine = line.trim();
-                  if (trimmedLine.startsWith('data: ') && trimmedLine !== 'data: [DONE]') {
-                    try {
-                      const dataObj = JSON.parse(trimmedLine.substring(6));
-                      if (dataObj.choices?.[0]?.delta?.content) {
-                        fullText += dataObj.choices[0].delta.content;
-                      }
-                    } catch (e) {}
-                  }
-                }
-              }
-            }
-          }
-          
+          const fullText = data.choices?.[0]?.message?.content || "";
+          console.log(`[Server] Z.ai response OK, text length: ${fullText.length}`);
           return res.json({ text: fullText });
       } else {
         const ai = new GoogleGenAI({ apiKey });
@@ -271,6 +279,122 @@ async function startServer() {
     } catch (error: any) {
       console.error("Backend proxy error generating content:", error);
       res.status(500).json({ error: error.message || "Unknown proxy error" });
+    }
+  });
+
+  // Global error handler
+  app.use((err: any, req: any, res: any, next: any) => {
+    console.error(`[Server] Unhandled error on ${req.method} ${req.url}:`, err.message, err.stack);
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message || "Internal Server Error" });
+    }
+  });
+
+  // Streaming text generation endpoint (SSE) — ใช้ https module เพื่อหลีกเลี่ยง Headers Timeout Error
+  app.post("/api/gemini/stream-text", async (req, res) => {
+    try {
+      const { model, contents, config } = req.body;
+      const apiKey = req.headers['x-api-key'] as string || process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ error: "Missing API Key" });
+      }
+
+      const hasCustomBaseUrl = config && config.baseUrl && config.baseUrl.trim() !== '';
+      const isOpenAI = apiKey.startsWith("sk-") || apiKey.includes(".") || hasCustomBaseUrl || (model && (model.startsWith("gpt-") || model.startsWith("o1") || model.startsWith("o3") || model.toLowerCase().startsWith("glm-") || model.toLowerCase().startsWith("claude-")));
+
+      if (!isOpenAI) {
+        return res.status(400).json({ error: "Streaming supports OpenAI-compatible APIs only (Z.ai, OpenAI, etc.)" });
+      }
+
+      let baseUrl = (config?.baseUrl && config.baseUrl !== 'undefined' && config.baseUrl.trim()) ? config.baseUrl.replace(/\/+$/, '').trim() : '';
+      if (!baseUrl) {
+        if (model && model.toLowerCase().startsWith("glm-")) {
+          baseUrl = "https://api.z.ai/api/coding/paas/v4";
+        } else {
+          baseUrl = "https://api.openai.com/v1";
+        }
+      }
+      const endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
+      const actualModel = model || "glm-5";
+
+      console.log(`[Server] Stream text → ${endpoint}, model: ${actualModel}`);
+
+      const body = JSON.stringify({
+        model: actualModel,
+        messages: [{ role: "user", content: contents }],
+        stream: true
+      });
+
+      const urlObj = new URL(endpoint);
+      const httpsReq = https.request({
+        hostname: urlObj.hostname,
+        port: 443,
+        path: urlObj.pathname + urlObj.search,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Length': Buffer.byteLength(body),
+        },
+        timeout: 900000,
+      }, (upstreamRes) => {
+        if (upstreamRes.statusCode && upstreamRes.statusCode >= 400) {
+          let errorBody = '';
+          upstreamRes.on('data', (chunk) => { errorBody += chunk.toString(); });
+          upstreamRes.on('end', () => {
+            try {
+              const errData = JSON.parse(errorBody);
+              res.status(upstreamRes.statusCode!).json({ error: errData.error?.message || errorBody });
+            } catch (e) {
+              res.status(upstreamRes.statusCode!).json({ error: errorBody || 'Unknown error' });
+            }
+          });
+          return;
+        }
+
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+
+        upstreamRes.on('data', (chunk: Buffer) => {
+          try { res.write(chunk); } catch (e) { /* client disconnected */ }
+        });
+        upstreamRes.on('end', () => {
+          try { res.end(); } catch (e) {}
+        });
+        upstreamRes.on('error', (err) => {
+          console.error('[Server] Stream upstream error:', err.message);
+          try { res.end(); } catch (e) {}
+        });
+      });
+
+      httpsReq.on('error', (err) => {
+        console.error('[Server] Stream fetch error:', err.message);
+        if (!res.headersSent) {
+          res.status(500).json({ error: `เชื่อมต่อไม่ได้: ${err.message}` });
+        }
+      });
+
+      httpsReq.on('timeout', () => {
+        httpsReq.destroy();
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Z.ai API หมดเวลา (Timeout 15 นาที)' });
+        } else {
+          try {
+            res.write(`data: ${JSON.stringify({ error: 'Timeout' })}\n\n`);
+            res.write('data: [DONE]\n\n');
+            res.end();
+          } catch (e) {}
+        }
+      });
+
+      httpsReq.write(body);
+      httpsReq.end();
+    } catch (error: any) {
+      console.error("Stream endpoint error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: error.message || "Unknown stream error" });
+      }
     }
   });
 

@@ -409,6 +409,76 @@ export default function CampaignSetup() {
       }
     }
 
+    const isSafetySeeded = localStorage.getItem('campaign_safetyForklift_seeded');
+    if (!isSafetySeeded) {
+      const safetyData = [
+        { keyword: "อุปกรณ์ความปลอดภัยของรถโฟล์คลิฟท์", title: "อุปกรณ์ความปลอดภัยของรถโฟล์คลิฟท์ ต้องมีอะไรบ้าง", level: 1 },
+        { keyword: "พนักพิงโหลดของรถโฟล์คลิฟท์", title: "พนักพิงโหลดของรถโฟล์คลิฟท์กับมาตรฐานและความสำคัญ", level: 2 },
+        { keyword: "หลังคาป้องกันรถโฟล์คลิฟท์ Overhead Guard", title: "หลังคาป้องกันรถโฟล์คลิฟท์ Overhead Guard คืออะไร", level: 2 },
+        { keyword: "ไฟเตือนและสัญญาณเสียงรถโฟล์คลิฟท์", title: "ไฟเตือนและสัญญาณเสียงรถโฟล์คลิฟท์ตามที่กฎหมายกำหนด", level: 2 },
+        { keyword: "ระบบเบรคฉุกเฉินรถโฟล์คลิฟท์", title: "ระบบเบรคฉุกเฉินรถโฟล์คลิฟท์นั้นทำงานอย่างไร", level: 2 },
+        { keyword: "กระจกมองหลังของรถโฟล์คลิฟท์", title: "กระจกมองหลังของรถโฟล์คลิฟท์ จำเป็นไหมในทุกสภาพงาน", level: 2 }
+      ];
+      
+      const newItems = safetyData.map(item => ({
+        id: 'safety-' + Math.random().toString(36).substr(2, 9),
+        keyword: item.keyword,
+        title: item.title,
+        language: 'thai',
+        overrides: {
+          secondaryKeywords: ["อุปกรณ์ความปลอดภัยของรถโฟล์คลิฟท์"],
+          language: "thai",
+          targetCountry: "thailand",
+          tone: "professional",
+          pov: "third",
+          formality: "formal",
+          autoExternalLinks: false
+        }
+      }));
+
+      const saved = localStorage.getItem('campaign_inputs');
+      let current: any[] = [];
+      if (saved) {
+        try { current = JSON.parse(saved); } catch (e) {}
+      }
+      const existingKeywords = new Set(current.map((c) => c.keyword));
+      const nonDuplicateNewItems = newItems.filter(item => !existingKeywords.has(item.keyword));
+      const updated = [...current, ...nonDuplicateNewItems];
+
+      setInputs(updated);
+      localStorage.setItem('campaign_inputs', JSON.stringify(updated));
+      localStorage.setItem('campaign_safetyForklift_seeded', 'true');
+    }
+
+    const isSafetyPillarForcedSeeded = localStorage.getItem('campaign_safetyPillar_forced_seeded_v2');
+    if (!isSafetyPillarForcedSeeded) {
+      const kw = "อุปกรณ์ความปลอดภัยของรถโฟล์คลิฟท์ ต้องมีอะไรบ้าง";
+      const newItem = {
+        id: 'safety-pillar-' + Math.random().toString(36).substr(2, 9),
+        keyword: kw,
+        title: kw,
+        language: 'thai',
+        overrides: {
+          secondaryKeywords: ["อุปกรณ์ความปลอดภัยของรถโฟล์คลิฟท์"],
+          language: "thai",
+          targetCountry: "thailand",
+          tone: "professional",
+          pov: "third",
+          formality: "formal",
+          autoExternalLinks: false
+        }
+      };
+      const saved = localStorage.getItem('campaign_inputs');
+      let current: any[] = [];
+      if (saved) {
+        try { current = JSON.parse(saved); } catch (e) {}
+      }
+      const updated = [...current, newItem];
+      setInputs(updated);
+      localStorage.setItem('campaign_inputs', JSON.stringify(updated));
+      localStorage.setItem('campaign_safetyPillar_forced_seeded_v2', 'true');
+    }
+
     const savedArticles = localStorage.getItem('campaign_config_generatedArticles');
     let hasArticles = false;
     if (savedArticles) {
@@ -562,7 +632,7 @@ export default function CampaignSetup() {
   const [sitemaps, setSitemaps] = usePersistentState<string[]>('sitemaps', []);
   const [customApiKey, setCustomApiKey] = usePersistentState('customApiKey', '645139e1a8fc4ed18665660a82c7412d.tWOLRtwBoUBsr8dJ');
   const [customOpenAiApiKey, setCustomOpenAiApiKey] = usePersistentState('customOpenAiApiKey', 'ark-a53fc090-6973-4a82-b47b-5bc5c4c952a4-b1f81');
-  const [textApiModel, setTextApiModel] = usePersistentState('textApiModel', 'glm-4.5');
+  const [textApiModel, setTextApiModel] = usePersistentState('textApiModel', 'glm-5');
   const [textApiBaseUrl, setTextApiBaseUrl] = usePersistentState('textApiBaseUrl', 'https://api.z.ai/api/coding/paas/v4');
   const [textApiPrompt, setTextApiPrompt] = usePersistentState('textApiPrompt', '');
   const [imageApiModel, setImageApiModel] = usePersistentState('imageApiModel', 'seedream-4-0-250828');
@@ -580,8 +650,8 @@ export default function CampaignSetup() {
     if (!customApiKey || customApiKey === 'a70be79aa9cb48898212205ead1bcd29.Xpy23Bqe6Knurg6d') {
       setCustomApiKey('645139e1a8fc4ed18665660a82c7412d.tWOLRtwBoUBsr8dJ');
     }
-    if (!textApiModel || textApiModel === 'auto' || textApiModel === 'GLM-5-Turbo' || textApiModel === 'glm-5-turbo') {
-      setTextApiModel('glm-4.5');
+    if (!textApiModel || textApiModel === 'auto' || textApiModel === 'GLM-5-Turbo' || textApiModel === 'glm-5-turbo' || textApiModel === 'glm-4.5') {
+      setTextApiModel('glm-5');
     }
     if (!textApiBaseUrl || textApiBaseUrl === 'https://open.bigmodel.cn/api/paas/v4') {
       setTextApiBaseUrl('https://api.z.ai/api/coding/paas/v4');
@@ -767,7 +837,30 @@ export default function CampaignSetup() {
           imageApiPrompt: imageApiPrompt
         };
 
-        const content = await generateArticle(input.keyword, input.title, activeConfig);
+        // สร้าง placeholder ก่อนเริ่ม generate เพื่อให้ live preview แสดงผลได้
+        const tempArticleId = `temp_${input.id}`;
+        const placeholderArticle = {
+          id: tempArticleId,
+          title: input.title || input.keyword,
+          keyword: input.keyword,
+          language: input.overrides?.language || language || 'English (US)',
+          content: '...',
+          date: new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric', hour12: true })
+        };
+        setGeneratedArticles(prev => [placeholderArticle, ...prev]);
+
+        const content = await generateArticle(input.keyword, input.title, activeConfig, (partialText, stage) => {
+          // Live preview — อัปเดตเนื้อหาที่กำลัง generate แสดงผลทันที
+          setGeneratedArticles(prev => {
+            const idx = prev.findIndex(a => a.id === tempArticleId);
+            if (idx >= 0 && partialText) {
+              const updated = [...prev];
+              updated[idx] = { ...updated[idx], content: partialText };
+              return updated;
+            }
+            return prev;
+          });
+        });
 
         // Check if item was removed from queue while waiting
         if (!latestQueueRef.current.some(q => q.id === input.id)) {
@@ -779,7 +872,7 @@ export default function CampaignSetup() {
         }
 
         const newArticle = {
-          id: Date.now().toString(),
+          id: tempArticleId, // ใช้ id เดียวกับ placeholder เพื่อ replace
           title: input.title || input.keyword,
           keyword: input.keyword,
           language: input.overrides?.language || language || 'English (US)',
@@ -787,7 +880,7 @@ export default function CampaignSetup() {
           date: new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric', hour12: true })
         };
 
-        setGeneratedArticles(prev => [newArticle, ...prev]);
+        setGeneratedArticles(prev => prev.map(a => a.id === tempArticleId ? newArticle : a));
         
         // Toast notification
         const toast = document.createElement('div');
@@ -1575,7 +1668,7 @@ export default function CampaignSetup() {
                               <SelectItem value="glm-5-turbo">glm-5-turbo (Z.AI)</SelectItem>
                               <SelectItem value="GLM-4.7">GLM-4.7 (Z.AI)</SelectItem>
                               <SelectItem value="GLM-4.6">GLM-4.6 (Z.AI)</SelectItem>
-                              <SelectItem value="GLM-4.5">GLM-4.5 (Z.AI)</SelectItem>
+                              <SelectItem value="GLM-5">GLM-5 (Z.AI)</SelectItem>
                               <SelectItem value="glm-4-flash">glm-4-flash (Z.AI)</SelectItem>
                               <SelectItem value="GLM-4-32B-0414-128K">GLM-4-32B (Z.AI)</SelectItem>
                             </SelectContent>

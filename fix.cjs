@@ -1,0 +1,12 @@
+const fs = require('fs');
+let code = fs.readFileSync('src/services/ai.ts', 'utf8');
+const lines = code.split('\n');
+const newLines = lines.slice(0, 417);
+newLines.push("    if (errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED') || errorMsg.includes('quota') || errorMsg.includes('exceeded')) {");
+newLines.push("      throw new Error(`Rate limit exceeded (429). Please check your API key quota.`);");
+newLines.push("    }");
+newLines.push("    throw new Error(errorMsg);");
+newLines.push("  }");
+newLines.push("}");
+fs.writeFileSync('src/services/ai.ts', newLines.join('\n'));
+console.log('Fixed end of file');
