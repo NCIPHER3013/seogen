@@ -14,7 +14,7 @@ async function startServer() {
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   // ใช้ https module โดยตรงเพื่อหลีกเลี่ยง Headers Timeout Error ของ Node.js native fetch
-  function fetchHttpsJson(url: string, body: string, headers: Record<string, string>, timeoutMs = 900000): Promise<{ status: number; data: any }> {
+  function fetchHttpsJson(url: string, body: string, headers: Record<string, string>, timeoutMs = 300000): Promise<{ status: number; data: any }> {
     return new Promise((resolve, reject) => {
       const urlObj = new URL(url);
       const req = https.request({

@@ -1,5 +1,4 @@
 import localforage from 'localforage';
-import { GoogleGenAI } from "@google/genai";
 
 async function compressBase64Image(dataUri: string, maxWidth = 900, quality = 0.70): Promise<string> {
   if (typeof window === 'undefined') return dataUri;
@@ -45,6 +44,69 @@ async function compressBase64Image(dataUri: string, maxWidth = 900, quality = 0.
   });
 }
 
+/**
+ * ระบบแก้ไขคำผิดไทย (Post-processing) — 3 ชั้น
+ * ทำงานหลัง AI สร้างบทความเสร็จแล้ว ไม่กินเวลาเพิ่มระหว่าง generate
+ */
+function fixThaiTypos(text: string): string {
+  // ชั้นที่ 1 — Regex generic: วรรณยุกต์ซ้ำ, พยัญชนะซ้ำ, สระซ้ำ, ๆ ซ้ำ
+  text = text.replace(/([่้๊๋ัีึื])\1+/g, '$1');           // วรรณยุกต์ซ้ำ เช่น ่่ ัั ็็
+  text = text.replace(/([ก-ฮ])(\1){2,}/g, '$1$1');         // พยัญชนะซ้ำ 3+ ตัว → 2 ตัว (ชื่อย่อย)
+  text = text.replace(/([ก-ฮ])\1(?=[^ก-ฮ])/g, '$1');       // พยัญชนะซ้ำ 2 ตัว → 1 ตัว
+  text = text.replace(/(เกี่ยว)ว+/g, '$1');                // สระซ้ำ เช่น เกี่ยวว → เกี่ยว
+  text = text.replace(/(ๆ){2,}/g, 'ๆ');                    // ๆ ซ้ำ
+  text = text.replace(/([a-zA-Z])\1{2,}/g, '$1$1');        // อังกฤษซ้ำ 3+ → 2
+
+  // ชั้นที่ 2 — Dictionary คำผิดเฉพาะ (~34 คู่)
+  const dict: Array<[RegExp, string]> = [
+    // คำทับศัพท์ผิด / สับสนความหมาย
+    [/พื้นที่แคง/g, 'พื้นที่แคบ'],
+    [/ปั้มจูนเบรก/g, 'ก้ามปูเบรก'],
+    [/กลองเบรก/g, 'ดรัมเบรก'],
+    [/ของไหมเบรก/g, 'น้ำมันเบรก'],
+    [/สะเก็ดรังแก้ว/g, 'สะเก็ดรอยเชื่อม'],
+    [/ฆาตกริ่ง/g, 'ฆาตกรเงียบ'],
+    [/จานเบรคบุบเสีย/g, 'จานเบรกคด'],
+    [/สอดแนมตามกฎหมาย/g, 'ปฏิบัติตามกฎหมาย'],
+    [/กระจกเข็นน้ำฝน/g, 'กระจกไล่ฝ้า'],
+    [/การประกันตัว(?!\s*(คน|นัก|ผู้))/g, 'การประกันภัย'],
+    [/มูลฝอย/g, 'สิ่งสกปรก'],
+    // คำสะกดผิดพบบ่อย
+    [/ผู้ขับขี้/g, 'ผู้ขับขี่'],
+    [/กระทันหัน/g, 'กะทันหัน'],
+    [/พนังพิง/g, 'พนักพิง'],
+    [/บิดเคี้ยว/g, 'บิดเบี้ยว'],
+    [/กระทัดรัด/g, 'กะทัดรัด'],
+    // คำแปลผิด / คำประดิษฐ์ขึ้น (hallucination)
+    [/ไหครบสุด/g, 'หลังคาป้องกัน'],
+    [/สวมงาม/g, 'สวยงาม'],
+    [/ทะลักทะลาม/g, 'พังทลาย'],
+    [/ยนต์กล/g, 'กลไก'],
+    [/ถูกขบวนเคียน/g, 'ถูกล้อเลียน'],
+    // ศัพท์เทคนิครถยก — แปลผิด
+    [/ส้อมยก/g, 'งา'],
+    [/(?<!รถ|ยาน|เครื่อง)ง่าม(?!อก)/g, 'งา'],
+    [/เสากระโชง/g, 'เสายก'],
+    [/เสากระโดง/g, 'เสายก'],
+    [/มุมมองบอด/g, 'จุดบอด'],
+    // วลีที่ AI มักเขียนผิด
+    [/มุมมองโดยรอบดีกว่า/g, 'มีทัศนวิสัยที่ดี'],
+    [/น้ำหมัก(?!\s*(ข้าว|หมัก))/g, 'คราบน้ำ'],
+    [/ดีบุก(?!\s*(แร่|จีน|เหมือง))/g, 'สิ่งสกปรก'],
+    [/ลมหนาวจัด/g, 'อันตรายร้ายแรง'],
+    [/โครงสร้างไฮเดรลิค/g, 'ระบบไฮดรอลิก'],
+  ];
+  for (const [pattern, replacement] of dict) {
+    text = text.replace(pattern, replacement);
+  }
+
+  // ชั้นที่ 3 — Inline quick-fix ทีละคำ (ตรวจรอบๆ พยัญชนะซ้ำที่ regex ชั้น 1 อาจพลาด)
+  text = text.replace(/(?<=[ก-ฮ])\s+(?=[่้๊๋ัีึื])/g, '');  // เช่น "ก ่" → "ก่"
+  text = text.replace(/(?<=[่้๊๋ัีื])\s+(?=[ก-ฮ])/g, '');  // เช่น "่ ก" → "่ก"
+
+  return text;
+}
+
 async function resolvePromptUrls(promptText: string): Promise<string> {
   if (!promptText) return promptText;
   const urlRegex = /(https?:\/\/[^\s<>'"]+)/g;
@@ -82,7 +144,7 @@ async function resolvePromptUrls(promptText: string): Promise<string> {
 }
 
 // Concurrency limiter สำหรับรูปภาพ — จำกัดไม่เหนือ 3 รูปพร้อมกัน เพื่อไม่ให้เกิน browser connection limit
-const MAX_CONCURRENT_IMAGES = 3;
+const MAX_CONCURRENT_IMAGES = 5;
 const imageQueue: Array<{ fn: () => Promise<string>; resolve: (v: string) => void; reject: (e: Error) => void }> = [];
 let imageQueueRunning = 0;
 
@@ -132,6 +194,8 @@ async function generateSingleImage(
   let lastError: any = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
+      const imgAbort = new AbortController();
+      const imgTimeout = setTimeout(() => imgAbort.abort(), 60000); // 60 วินาที
       const imageRes = await fetch('/api/gemini/generate', {
         method: "POST",
         headers: {
@@ -145,8 +209,10 @@ async function generateSingleImage(
             baseUrl: config.imageApiBaseUrl,
             aspectRatio: ar
           }
-        })
+        }),
+        signal: imgAbort.signal
       });
+      clearTimeout(imgTimeout);
 
       if (!imageRes.ok) {
         const errorData = await imageRes.json().catch(() => null);
@@ -279,32 +345,7 @@ KEYWORD INTEGRATION:
 
 FORMATTING RULES:
 - CRITICAL WRITING GUIDELINES: Do NOT hallucinate facts or write nonsensical content. The article must be highly logical, factually correct, and use appropriate, professional terminology. Avoid rambling, repeating points needlessly, or writing "mushy" content.
-- CUSTOMER FEEDBACK RULES (MUST FOLLOW STRICTLY):
-  - When writing about "Reach Truck": Always clarify the definition that it is an "electric stand-on forklift" (รถโฟล์คลิฟท์ไฟฟ้าประเภทยืนขับ).
-  - When discussing VNA (Very Narrow Aisle) for Reach Trucks, state that "some models support" (บางรุ่นรองรับ) it, do NOT say all of them do.
-  - When mentioning reach distance or storage space limits, use neutral phrasing (specs vary by model). Do not state absolute numbers.
-  - When comparing Stand-on vs Sit-down forklifts (รถโฟล์คลิฟท์ยืนขับ vs นั่งขับ), use neutral terms for weight capacities as they vary by model. Avoid saying "sit-down lifts heavier" as an absolute rule.
-  - Fix typos: ALWAYS use "พื้นที่แคบ" (narrow space), NEVER use the typo "พื้นที่แคง".
-  - For visibility descriptions on stand-on forklifts, use the phrasing "มีทัศนวิสัยที่ดี" (has good visibility) instead of "มุมมองโดยรอบดีกว่า".
-
-- CRITICAL THAI LANGUAGE INTEGRITY & ANTI-HALLUCINATION:
-  - NEVER translate English idioms or technical terms literally. Use natural, professional Thai industry jargon.
-  - DO NOT invent new words or use archaic terms (e.g., NEVER use "ไหครบสุด", "สวมงาม", "ทะลักทะลาม", "ยนต์กล", "ถูกขบวนเคียน").
-  - PROHIBITED WORDS & REQUIRED REPLACEMENTS (STRICTLY ENFORCED):
-    - "Forks" -> Use "งารถ" หรือ "งายก" (NEVER "ส้อมยก" or "ง่าม")
-    - "Mast" -> Use "เสายก" หรือ "เสารถโฟล์คลิฟท์" (NEVER "เสากระโชง" or "เสากระโดง")
-    - "Overhead Guard" -> Use "หลังคาป้องกัน" (NEVER "ไหครบสุด" or "โครงสร้างไฮเดรลิค")
-    - "Blind spot" -> Use "จุดบอด" หรือ "จุดอับสายตา" (NEVER "มุมมองบอด" or "ลมหนาวจัด")
-    - "Welding slag" -> Use "สะเก็ดรอยเชื่อม" (NEVER "สะเก็ดรังแก้ว")
-    - "Silent Killer" -> Use "ฆาตกรเงียบ" (NEVER "ฆาตกริ่ง")
-    - "Brake Caliper/Drum" -> Use "ก้ามปูเบรก" / "ดรัมเบรก" (NEVER "ปั้มจูนเบรก" / "กลองเบรก")
-    - "Brake Fluid" -> Use "น้ำมันเบรก" (NEVER "ของไหมเบรก")
-    - "Debris/Dirt/Moisture" -> Use "สิ่งสกปรก", "ฝุ่นละออง", "คราบน้ำ" (NEVER "ดีบุก", "มูลฝอย", "น้ำหมัก")
-    - "Warped Rotor" -> Use "จานเบรกคด" (NEVER "จานเบรคบุบเสีย")
-    - "Comply with law" -> Use "ปฏิบัติตามกฎหมาย" (NEVER "สอดแนมตามกฎหมาย")
-    - "Heated mirrors" -> Use "กระจกไล่ฝ้า" (NEVER "กระจกเข็นน้ำฝน")
-    - "Insurance" -> Use "การประกันภัย" (NEVER "การประกันตัว")
-  - PROOFREADING: Ensure perfect Thai spelling (e.g., "ผู้ขับขี่" not "ผู้ขับขี้", "กะทันหัน" not "กระทันหัน", "พนักพิง" not "พนังพิง", "บิดเบี้ยว" not "บิดเคี้ยว").
+- NEVER translate English idioms or technical terms literally. Use natural, professional Thai industry jargon. Do NOT invent new words or use archaic terms.
 
 ${isThai ? `- For Thai articles, use these Thai labels for standard sections: 
     "Key Takeaways" -> "สรุปประเด็นสำคัญ"
@@ -385,6 +426,8 @@ Output the article in Markdown format. Use proper heading tags (H1, H2, H3), bul
 
       // ลอง streaming ก่อน (เร็วกว่า + เห็นข้อความทันที) ถ้าล้มเหลวจะ fallback ไป non-streaming
       try {
+        const textAbort = new AbortController();
+        const textTimeout = setTimeout(() => textAbort.abort(), 300000); // 5 นาที
         const streamResponse = await fetch('/api/gemini/stream-text', {
           method: "POST",
           headers: {
@@ -395,8 +438,10 @@ Output the article in Markdown format. Use proper heading tags (H1, H2, H3), bul
             model: requestModel,
             contents: prompt,
             config: { baseUrl: config.textApiBaseUrl }
-          })
+          }),
+          signal: textAbort.signal
         });
+        clearTimeout(textTimeout);
 
         if (streamResponse.ok && streamResponse.body) {
           const reader = streamResponse.body.getReader();
@@ -454,6 +499,8 @@ Output the article in Markdown format. Use proper heading tags (H1, H2, H3), bul
         if (streamErr.message !== 'Streaming unavailable, falling back') {
           console.warn('[AI] Streaming failed, falling back to non-streaming:', streamErr.message);
         }
+        const fallbackAbort = new AbortController();
+        const fallbackTimeout = setTimeout(() => fallbackAbort.abort(), 300000); // 5 นาที
         const response = await fetch('/api/gemini/generate', {
           method: "POST",
           headers: {
@@ -464,8 +511,10 @@ Output the article in Markdown format. Use proper heading tags (H1, H2, H3), bul
             model: requestModel,
             contents: prompt,
             config: { baseUrl: config.textApiBaseUrl }
-          })
+          }),
+          signal: fallbackAbort.signal
         });
+        clearTimeout(fallbackTimeout);
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => null);
@@ -490,6 +539,11 @@ Output the article in Markdown format. Use proper heading tags (H1, H2, H3), bul
       finalMarkdown = finalMarkdown.replace(/^```(?:markdown|md)?\s*\n/i, '');
       finalMarkdown = finalMarkdown.replace(/\n```\s*$/i, '');
       finalMarkdown = finalMarkdown.trim();
+
+      // Post-processing: แก้คำผิดไทยหลัง AI สร้างเสร็จ (ไม่กินเวลา generate)
+      if (isThai) {
+        finalMarkdown = fixThaiTypos(finalMarkdown);
+      }
     } catch (restError: any) {
       console.warn("REST API text generation failed:", restError);
       throw restError;
