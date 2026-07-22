@@ -1,9 +1,13 @@
+import dotenv from "dotenv";
+dotenv.config({ path: ".env.local" }); // โหลด .env.local ก่อนเริ่มทำงาน
+
 import { GoogleGenAI } from "@google/genai";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import cors from "cors";
 import path from "path";
 import https from "https";
+import pg from "pg";
 
 async function startServer() {
   const app = express();
@@ -395,6 +399,133 @@ async function startServer() {
       if (!res.headersSent) {
         res.status(500).json({ error: error.message || "Unknown stream error" });
       }
+    }
+  });
+
+  // DB connection สำหรับ admin (bypass RLS)
+  const supabaseUrl = process.env.VITE_SUPABASE_URL;
+  const dbProjectId = supabaseUrl ? new URL(supabaseUrl).hostname.split('.')[0] : '';
+  const dbPassword = process.env.SUPABASE_DB_PASSWORD;
+  const encodedPassword = encodeURIComponent(dbPassword || '');
+  const pool = dbPassword && dbProjectId ? new pg.Pool({
+    connectionString: `postgresql://postgres:${encodedPassword}@db.${dbProjectId}.supabase.co:5432/postgres`,
+    ssl: { rejectUnauthorized: false },
+  }) : null;
+
+  // Admin: ดึงข้อมูลผู้ใช้ทั้งหมด (bypass RLS)
+  app.get("/api/admin/users", async (_req, res) => {
+    try {
+      if (!pool) return res.status(500).json({ error: 'DB not configured' });
+      const { rows } = await pool.query(
+        'SELECT u.id, u.email, u.subscription_tier, u.word_credits, u.image_credits, u.created_at, '
+        + "COALESCE(au.raw_user_meta_data->>'role', 'user') as role "
+        + 'FROM public.users u LEFT JOIN auth.users au ON u.id = au.id ORDER BY u.created_at DESC'
+      );
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: อัปเดต Role ผู้ใช้งาน
+  app.post("/api/admin/users/role", async (req, res) => {
+    try {
+      if (!pool) return res.status(500).json({ error: 'DB not configured' });
+      const { userId, role } = req.body;
+      if (!userId || !role) {
+        return res.status(400).json({ error: 'Missing userId or role' });
+      }
+
+      // Update the raw_user_meta_data for the user in auth.users
+      const query = `
+        UPDATE auth.users 
+        SET raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || jsonb_build_object('role', $1::text)
+        WHERE id = $2
+        RETURNING id;
+      `;
+      const { rowCount } = await pool.query(query, [role, userId]);
+      
+      if (rowCount === 0) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      res.json({ success: true, message: `Role updated to ${role}` });
+    } catch (e: any) {
+      console.error('Failed to update role:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: สถิติรวม (bypass RLS)
+  app.get("/api/admin/stats", async (_req, res) => {
+    try {
+      if (!pool) return res.status(500).json({ error: 'DB not configured' });
+      const [usersR, articlesR, imagesR] = await Promise.all([
+        pool.query('SELECT COUNT(*)::int as c, COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE) as new_today FROM public.users'),
+        pool.query('SELECT COUNT(*)::int as c FROM public.articles'),
+        pool.query('SELECT COUNT(*)::int as c FROM public.images'),
+      ]);
+      res.json({
+        totalUsers: usersR.rows[0].c,
+        newUsersToday: usersR.rows[0].new_today,
+        totalArticles: articlesR.rows[0].c,
+        totalImages: imagesR.rows[0].c,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: ข้อมูลกราฟ 7 วันล่าสุด (bypass RLS)
+  app.get("/api/admin/chart-data", async (_req, res) => {
+    try {
+      if (!pool) return res.status(500).json({ error: 'DB not configured' });
+      const { rows } = await pool.query(`
+        WITH dates AS (
+          SELECT generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, '1 day')::date AS d
+        )
+        SELECT 
+          to_char(d, 'DD/MM') as date,
+          (SELECT count(*)::int FROM public.users WHERE created_at::date = d) as users,
+          (SELECT count(*)::int FROM public.articles WHERE created_at::date = d) as articles
+        FROM dates
+        ORDER BY d ASC;
+      `);
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // สร้าง user profile อัตโนมัติ (สำหรับทุก user, bypass RLS)
+  app.post("/api/ensure-user", async (req, res) => {
+    try {
+      if (!pool) return res.status(500).json({ error: 'DB not configured' });
+      const { id, email } = req.body;
+      if (!id || !email) return res.status(400).json({ error: 'Missing id or email' });
+      await pool.query(
+        'INSERT INTO public.users (id, email, subscription_tier, word_credits, image_credits) '
+        + 'VALUES ($1, $2, \'free\', 10000, 10) ON CONFLICT (id) DO NOTHING',
+        [id, email]
+      );
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: อัปเดตผู้ใช้
+  app.post("/api/admin/users/update", async (req, res) => {
+    try {
+      if (!pool) return res.status(500).json({ error: 'DB not configured' });
+      const { id, word_credits, image_credits, subscription_tier } = req.body;
+      await pool.query(
+        'UPDATE public.users SET word_credits = $1, image_credits = $2, subscription_tier = $3 WHERE id = $4',
+        [word_credits, image_credits, subscription_tier, id]
+      );
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 

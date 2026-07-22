@@ -17,9 +17,19 @@ export default function AuthPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    let created = false;
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session && window.location.pathname === '/') {
         navigate('/dashboard');
+        if (created) return;
+        created = true;
+        // สร้าง user profile ผ่าน server (bypass RLS)
+        fetch('/api/ensure-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: session.user.id, email: session.user.email }),
+        }).catch(() => {});
       }
     });
     

@@ -70,7 +70,23 @@ const schemaSql = `
   DROP POLICY IF EXISTS "Users can update own profile" ON users;
   CREATE POLICY "Users can update own profile" ON users FOR UPDATE USING (auth.uid() = id);
 
+  -- Admin Policies (เช็ค user_metadata.role จาก auth.users)
+  DROP POLICY IF EXISTS "Admins can view all users" ON users;
+  CREATE POLICY "Admins can view all users" ON users FOR SELECT USING (
+    EXISTS (SELECT 1 FROM auth.users WHERE auth.users.id = auth.uid() AND auth.users.raw_user_meta_data->>'role' = 'admin')
+  );
+
+  DROP POLICY IF EXISTS "Admins can update all users" ON users;
+  CREATE POLICY "Admins can update all users" ON users FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM auth.users WHERE auth.users.id = auth.uid() AND auth.users.raw_user_meta_data->>'role' = 'admin')
+  );
+
   -- Articles
+  DROP POLICY IF EXISTS "Admins can view all articles" ON articles;
+  CREATE POLICY "Admins can view all articles" ON articles FOR SELECT USING (
+    EXISTS (SELECT 1 FROM auth.users WHERE auth.users.id = auth.uid() AND auth.users.raw_user_meta_data->>'role' = 'admin')
+    OR auth.uid() = user_id
+  );
   DROP POLICY IF EXISTS "Users can view own articles" ON articles;
   CREATE POLICY "Users can view own articles" ON articles FOR SELECT USING (auth.uid() = user_id);
 

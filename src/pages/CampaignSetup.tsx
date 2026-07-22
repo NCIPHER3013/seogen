@@ -5,7 +5,8 @@ import {
   ChevronRight, LayoutDashboard, Feather, Sparkles, Plus, X, User,
   Search, PlaySquare, Video, SearchCode, Edit3, Trash2, Loader2,
   AlignLeft, List, BookOpen, Type, Layout, ExternalLink,
-  MoreHorizontal, Eye, Send, Newspaper, Youtube, Menu
+  MoreHorizontal, Eye, Send, Newspaper, Youtube, Menu,
+  Users, BarChart3
 } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,6 +24,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { generateArticle } from '@/services/ai';
+import { useAdmin } from '@/hooks/useAdmin';
+import { saveArticle, fetchUserArticles } from '@/lib/articles';
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -530,17 +533,39 @@ export default function CampaignSetup() {
   }, [user]);
 
   // Campaign Inputs State
-  const [inputs, setInputs] = useState<ArticleItem[]>(() => {
-    const saved = localStorage.getItem('campaign_inputs');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        return [];
+  const [inputs, setInputs] = useState<ArticleItem[]>([]);
+
+  // Load inputs when user is loaded
+  useEffect(() => {
+    if (user?.id) {
+      const saved = localStorage.getItem(`campaign_inputs_${user.id}`);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setInputs(parsed);
+          } else {
+            setInputs([]);
+          }
+        } catch (e) {
+          setInputs([]);
+        }
+      } else {
+        setInputs([]);
       }
+    } else if (user === null) {
+      setInputs([]);
     }
-    return [];
-  });
+  }, [user]);
+
+  // Save inputs when they change
+  useEffect(() => {
+    if (user?.id) {
+      try {
+        localStorage.setItem(`campaign_inputs_${user.id}`, JSON.stringify(inputs));
+      } catch(e) {}
+    }
+  }, [inputs, user]);
   const [selectedInputIds, setSelectedInputIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -590,25 +615,44 @@ export default function CampaignSetup() {
 
   // Configuration State
   const usePersistentState = <T,>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
-    const [state, setState] = useState<T>(() => {
-      const saved = localStorage.getItem(`campaign_config_${key}`);
-      if (saved !== null) {
-        try {
-          return JSON.parse(saved);
-        } catch (e) {
-          return initialValue;
-        }
-      }
-      return initialValue;
-    });
+    const [state, setState] = useState<T>(initialValue);
+    const isFirstRender = React.useRef(true);
 
     useEffect(() => {
-      try {
-        localStorage.setItem(`campaign_config_${key}`, JSON.stringify(state));
-      } catch (error) {
-        console.warn('Failed to save to localStorage:', error);
+      if (user?.id) {
+        const saved = localStorage.getItem(`campaign_config_${user.id}_${key}`);
+        if (saved !== null) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed) ? parsed.length > 0 : (parsed !== null && parsed !== '')) {
+              setState(parsed);
+            } else {
+              setState(initialValue);
+            }
+          } catch (e) {
+            setState(initialValue);
+          }
+        } else {
+          setState(initialValue);
+        }
+      } else if (user === null) {
+        setState(initialValue);
       }
-    }, [key, state]);
+    }, [user?.id, key]);
+
+    useEffect(() => {
+      if (isFirstRender.current) {
+        isFirstRender.current = false;
+        return;
+      }
+      if (user?.id) {
+        try {
+          localStorage.setItem(`campaign_config_${user.id}_${key}`, JSON.stringify(state));
+        } catch (error) {
+          console.warn('Failed to save to localStorage:', error);
+        }
+      }
+    }, [key, state, user?.id]);
 
     return [state, setState];
   };
@@ -771,11 +815,46 @@ export default function CampaignSetup() {
   // Persistent Generated Articles
   const [generatedArticles, setGeneratedArticles] = usePersistentState<Array<{id: string, title: string, keyword: string, language: string, content: string, date: string}>>('generatedArticles', []);
 
+  // Fetch from Supabase on mount to merge with local storage
+  useEffect(() => {
+    async function loadDbArticles() {
+      try {
+        const dbArticles = await fetchUserArticles();
+        if (dbArticles && dbArticles.length > 0) {
+          const mappedArticles = dbArticles.map(a => ({
+            id: a.id,
+            title: a.title,
+            keyword: a.title, // Keyword might not be saved individually, using title as fallback
+            language: 'English (US)', // Defaulting since it's not in DB
+            content: a.content,
+            date: new Date(a.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric', hour12: true })
+          }));
+          
+          setGeneratedArticles(prev => {
+             const merged = [...prev];
+             mappedArticles.forEach(dbA => {
+                if (!merged.some(p => p.id === dbA.id)) {
+                  merged.push(dbA);
+                }
+             });
+             // Sort by date descending roughly
+             return merged;
+          });
+        }
+      } catch (e) {
+        console.error('Failed to load DB articles:', e);
+      }
+    }
+    loadDbArticles();
+  }, []);
+
   // Generation State
   const [activeTab, setActiveTab] = useState("inputs");
   const [generatingQueue, setGeneratingQueue] = usePersistentState<ArticleItem[]>('generatingQueue', []);
   const [generatedArticle, setGeneratedArticle] = useState<{id: string, title: string, markdown: string} | null>(null);
   const [articleModalOpen, setArticleModalOpen] = useState(false);
+
+  const { isAdmin } = useAdmin();
 
   const isProcessingRef = React.useRef(false);
   const latestQueueRef = React.useRef(generatingQueue);
@@ -880,7 +959,20 @@ export default function CampaignSetup() {
           date: new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric', hour12: true })
         };
 
-        setGeneratedArticles(prev => prev.map(a => a.id === tempArticleId ? newArticle : a));
+        try {
+          const savedDbArticle = await saveArticle(newArticle.title, newArticle.content, 'Completed');
+          if (savedDbArticle) {
+            newArticle.id = savedDbArticle.id; // Use DB ID instead of temp ID
+          }
+        } catch (dbErr) {
+          console.error('Failed to save to Supabase', dbErr);
+        }
+
+        setGeneratedArticles(prev => {
+           // We need to replace tempArticleId with the newArticle, including its updated ID if it was saved
+           const filtered = prev.filter(a => a.id !== tempArticleId);
+           return [newArticle, ...filtered];
+        });
         
         // Toast notification
         const toast = document.createElement('div');
@@ -905,7 +997,6 @@ export default function CampaignSetup() {
             return newInputs;
           });
           setGeneratingQueue([]);
-          setActiveTab("settings");
           
           const toast = document.createElement('div');
           toast.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-red-600 text-white rounded-xl px-6 py-4 text-sm font-medium shadow-2xl flex flex-col items-center gap-3 z-[9999] animate-in fade-in slide-in-from-bottom-4 max-w-[90vw] text-center';
@@ -928,7 +1019,6 @@ export default function CampaignSetup() {
             return [...prev, input];
           });
           
-          setActiveTab("settings");
           const toast = document.createElement('div');
           toast.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-red-600 text-white rounded-xl px-4 py-3 text-sm font-medium shadow-2xl flex items-center gap-3 z-[9999] animate-in fade-in slide-in-from-bottom-4';
           toast.innerHTML = `ข้อผิดพลาด: ${err.message}`;
@@ -1029,12 +1119,22 @@ export default function CampaignSetup() {
             <Link to="/articles" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-center gap-3 w-full py-3 text-base font-medium rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition-colors">
               <FileText className="w-5 h-5" /> บทความทั้งหมด
             </Link>
+            {isAdmin && (
+            <Link to="/admin?tab=users" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-center gap-3 w-full py-3 text-base font-medium rounded-xl text-purple-300 hover:text-white bg-purple-600/20 transition-colors">
+              <Users className="w-5 h-5" /> จัดการผู้ใช้
+            </Link>
+            )}
+            {isAdmin && (
+            <Link to="/admin?tab=stats" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-center gap-3 w-full py-3 text-base font-medium rounded-xl text-purple-300 hover:text-white bg-purple-600/20 transition-colors">
+              <BarChart3 className="w-5 h-5" /> สถิติรวม
+            </Link>
+            )}
           </nav>
         </div>
       )}
 
       {/* Sidebar - Desktop */}
-      <aside className="w-64 bg-slate-900 text-slate-200 flex-shrink-0 hidden md:flex flex-col h-screen sticky top-0">
+      <aside className="w-64 bg-slate-900 text-slate-200 flex-shrink-0 hidden md:flex flex-col h-screen sticky top-0 z-20">
         <div className="p-6">
           <Link to="/dashboard" className="flex items-center gap-2 font-bold text-xl text-white mb-8">
             <Sparkles className="w-6 h-6 text-purple-500" />
@@ -1046,11 +1146,21 @@ export default function CampaignSetup() {
               <LayoutDashboard className="w-4 h-4" /> แดชบอร์ด
             </Link>
             <Link to="/campaign/new" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md text-white bg-slate-800 transition-colors">
-              <Plus className="w-4 h-4" /> แคมเปญอัตโนมัติ
+              <Plus className="w-4 h-4" /> สร้างแคมเปญใหม่
             </Link>
-            <Link to="/articles" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md text-slate-400 hover:text-white hover:bg-slate-800">
+            <Link to="/articles" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
               <FileText className="w-4 h-4" /> บทความทั้งหมด
             </Link>
+            {isAdmin && (
+            <Link to="/admin?tab=users" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md text-purple-300 hover:text-white bg-purple-600/20 transition-colors">
+              <Users className="w-4 h-4" /> จัดการผู้ใช้
+            </Link>
+            )}
+            {isAdmin && (
+            <Link to="/admin?tab=stats" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md text-purple-300 hover:text-white bg-purple-600/20 transition-colors">
+              <BarChart3 className="w-4 h-4" /> สถิติรวม
+            </Link>
+            )}
           </nav>
         </div>
         <div className="mt-auto p-4 border-t border-slate-800">
@@ -1060,7 +1170,7 @@ export default function CampaignSetup() {
             </div>
             <div className="flex-1 overflow-hidden">
               <p className="text-sm font-medium text-white truncate">{user.email}</p>
-              <p className="text-xs text-slate-400 truncate">ผู้ดูแลระบบ (Admin)</p>
+              <p className="text-xs text-slate-400 truncate">{isAdmin ? 'ผู้ดูแลระบบ (Admin)' : 'ผู้ใช้งาน'}</p>
             </div>
           </div>
         </div>
@@ -1177,7 +1287,10 @@ export default function CampaignSetup() {
             </div>
 
             {/* Campaign Tabs */}
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <Tabs value={activeTab} onValueChange={(val) => {
+              if (val === 'settings' && !isAdmin) return;
+              setActiveTab(val);
+            }} className="w-full">
               <div className="border-b border-gray-200 mb-6 w-full overflow-x-auto overflow-y-hidden">
                 <TabsList className="bg-transparent h-auto p-0 flex space-x-6 min-w-max">
                   <TabsTrigger value="inputs" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-purple-600 data-[state=active]:shadow-none rounded-none py-3 px-1 font-medium text-slate-600 data-[state=active]:text-purple-700 hover:text-purple-700 transition-colors">
@@ -1195,9 +1308,11 @@ export default function CampaignSetup() {
                   <TabsTrigger value="templates" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-purple-600 data-[state=active]:shadow-none rounded-none py-3 px-1 font-medium text-slate-600 data-[state=active]:text-purple-700 hover:text-purple-700 transition-colors">
                     เทมเพลตบทความ
                   </TabsTrigger>
+                  {isAdmin && (
                   <TabsTrigger value="settings" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-purple-600 data-[state=active]:shadow-none rounded-none py-3 px-1 font-medium text-slate-600 data-[state=active]:text-purple-700 hover:text-purple-700 transition-colors">
                     เชื่อมต่อระบบ
                   </TabsTrigger>
+                  )}
                 </TabsList>
               </div>
 
@@ -1615,6 +1730,7 @@ export default function CampaignSetup() {
                     การตั้งค่าเทมเพลตและบล็อก
                 </div>
               </TabsContent>
+              {isAdmin && (
               <TabsContent value="settings" className="bg-white border text-sm border-slate-200 rounded-lg shadow-sm">
                 <div className="p-8">
                   <div className="max-w-4xl space-y-8">
@@ -1823,6 +1939,7 @@ export default function CampaignSetup() {
                   </div>
                 </div>
               </TabsContent>
+              )}
 
             </Tabs>
           </div>
@@ -2450,18 +2567,12 @@ export default function CampaignSetup() {
                   sel?.addRange(range);
                   document.execCommand('copy');
                   sel?.removeAllRanges();
-                  alert('✅ คัดลอกเนื้อหาแบบจัดรูปแบบ (Rich Text) พร้อมรูปภาพลง Clipboard เรียบร้อยแล้ว สามารถนำไปวางใน Word หรือ Notion ได้เลยครับ');
+                  alert('คัดลอกลง Clipboard แล้ว');
                 } else {
                   alert('ไม่พบเนื้อหา');
                 }
               }}>
-                คัดลอกลง Word / Notion (รูป+จัดรูปแบบ)
-              </Button>
-              <Button variant="outline" className="hidden sm:inline-flex" onClick={() => {
-                navigator.clipboard.writeText(generatedArticle?.markdown || '');
-                alert('คัดลอกลง Clipboard แล้ว');
-              }}>
-                คัดลอกออริจินัล Markdown
+                คัดลอก
               </Button>
             </div>
           </DialogFooter>

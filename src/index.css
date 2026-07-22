@@ -131,7 +131,7 @@
 
 /* Custom Markdown Rendering Styles */
 .markdown-body {
-  @apply text-slate-800 leading-relaxed;
+  @apply text-slate-800 leading-relaxed font-sans;
 }
 .markdown-body h1, 
 .markdown-body h2, 
@@ -140,16 +140,19 @@
   @apply font-bold text-slate-900 mt-8 mb-4 tracking-tight;
 }
 .markdown-body h1 { @apply text-3xl; }
-.markdown-body h2 { @apply text-2xl; }
-.markdown-body h3 { @apply text-xl; }
+.markdown-body h2 { @apply text-2xl text-purple-700; }
+.markdown-body h3 { @apply text-xl text-slate-800; }
 .markdown-body p {
-  @apply mb-5;
+  @apply mb-5 text-[16px] leading-[1.8];
 }
 .markdown-body ul {
-  @apply list-disc list-inside mb-5 space-y-2;
+  @apply list-disc mb-5 space-y-2 pl-6 marker:text-slate-400;
 }
 .markdown-body ol {
-  @apply list-decimal list-inside mb-5 space-y-2;
+  @apply list-decimal mb-5 space-y-2 pl-6 marker:text-slate-500 marker:font-medium;
+}
+.markdown-body li {
+  @apply text-[16px] leading-[1.8] text-slate-700;
 }
 .markdown-body li p {
   @apply inline;
@@ -161,10 +164,33 @@
   @apply font-bold text-slate-900;
 }
 .markdown-body blockquote {
-  @apply border-l-4 border-purple-200 pl-4 py-1 italic text-slate-700 bg-slate-50 rounded-r-lg mb-5;
+  @apply border-l-[3px] border-purple-400 pl-4 py-2 italic text-slate-600 bg-purple-50/50 mb-5 text-[15px];
 }
 .markdown-body img {
   @apply w-full h-auto max-h-[500px] object-cover rounded-xl my-8 shadow-sm border border-slate-100;
+}
+
+/* Table Styling matching reference */
+.markdown-body table {
+  @apply w-full border-collapse mb-8 text-[15px] overflow-hidden rounded-lg border border-slate-200 hidden sm:table;
+}
+/* Responsive table wrapper for mobile */
+.markdown-body .table-wrapper {
+  @apply w-full overflow-x-auto mb-8 block sm:table;
+}
+.markdown-body table, 
+.markdown-body th, 
+.markdown-body td {
+  @apply border border-slate-200;
+}
+.markdown-body th {
+  @apply bg-[#f8f9fa] text-slate-800 font-bold px-4 py-3 text-left;
+}
+.markdown-body td {
+  @apply px-4 py-3 text-slate-700 bg-white;
+}
+.markdown-body tr:nth-child(even) td {
+  @apply bg-slate-50/50;
 }
 .markdown-body :first-child {
   @apply mt-0;

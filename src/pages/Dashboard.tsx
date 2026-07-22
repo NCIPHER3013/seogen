@@ -5,17 +5,23 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { useAdmin } from '@/hooks/useAdmin';
+import { Shield, Users, BarChart3 } from 'lucide-react';
+import { fetchUserArticles, Article } from '@/lib/articles';
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState<any>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const { isAdmin } = useAdmin();
+  const [stats, setStats] = useState({ total: 0, completed: 0 });
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user }, error }) => {
       // Intentionally ignoring network errors to prevent overlays
       if (user) {
         setUser(user);
+        loadStats();
       } else {
         navigate('/');
       }
@@ -31,6 +37,44 @@ export default function Dashboard() {
 
     return () => subscription.unsubscribe();
   }, [navigate]);
+
+  const loadStats = async () => {
+    try {
+      const dbArticles = await fetchUserArticles();
+      let localArticles: Article[] = [];
+      const localData = localStorage.getItem(`campaign_config_${user?.id}_generatedArticles`);
+      if (localData) {
+        const parsed = JSON.parse(localData);
+        if (Array.isArray(parsed)) {
+          localArticles = parsed.map((a: any) => ({
+            id: a.id,
+            user_id: '',
+            title: a.title,
+            content: a.content,
+            status: 'Completed' as const,
+            seo_score: 0,
+            created_at: a.date ? new Date(a.date).toISOString() : new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }));
+        }
+      }
+
+      // Merge and deduplicate
+      const merged = [...dbArticles];
+      localArticles.forEach(la => {
+        if (!merged.find(da => da.id === la.id)) {
+          merged.push(la);
+        }
+      });
+
+      setStats({
+        total: merged.length,
+        completed: merged.filter(a => a.status === 'Completed' || a.status === 'Published').length
+      });
+    } catch (e) {
+      console.error('Failed to load stats', e);
+    }
+  };
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -65,12 +109,22 @@ export default function Dashboard() {
             <Link to="/articles" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-center gap-3 w-full py-3 text-base font-medium rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition-colors">
               <FileText className="w-5 h-5" /> บทความทั้งหมด
             </Link>
+            {isAdmin && (
+            <Link to="/admin?tab=users" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-center gap-3 w-full py-3 text-base font-medium rounded-xl text-purple-300 hover:text-white bg-purple-600/20">
+              <Users className="w-5 h-5" /> จัดการผู้ใช้
+            </Link>
+            )}
+            {isAdmin && (
+            <Link to="/admin?tab=stats" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-center gap-3 w-full py-3 text-base font-medium rounded-xl text-purple-300 hover:text-white bg-purple-600/20">
+              <BarChart3 className="w-5 h-5" /> สถิติรวม
+            </Link>
+            )}
           </nav>
         </div>
       )}
 
       {/* Sidebar (Desktop) */}
-      <aside className="w-64 bg-slate-900 text-slate-200 flex-shrink-0 hidden md:flex flex-col h-screen sticky top-0">
+      <aside className="w-64 bg-slate-900 text-slate-200 flex-shrink-0 hidden md:flex flex-col h-screen sticky top-0 z-20">
         <div className="p-6">
           <Link to="/dashboard" className="flex items-center gap-2 font-bold text-xl text-white mb-8">
             <Sparkles className="w-6 h-6 text-purple-500" />
@@ -87,6 +141,16 @@ export default function Dashboard() {
             <Link to="/articles" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
               <FileText className="w-4 h-4" /> บทความทั้งหมด
             </Link>
+            {isAdmin && (
+            <Link to="/admin?tab=users" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md text-purple-300 hover:text-white bg-purple-600/20 transition-colors">
+              <Users className="w-4 h-4" /> จัดการผู้ใช้
+            </Link>
+            )}
+            {isAdmin && (
+            <Link to="/admin?tab=stats" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md text-purple-300 hover:text-white bg-purple-600/20 transition-colors">
+              <BarChart3 className="w-4 h-4" /> สถิติรวม
+            </Link>
+            )}
           </nav>
         </div>
         <div className="mt-auto p-4 border-t border-slate-800">
@@ -96,7 +160,7 @@ export default function Dashboard() {
             </div>
             <div className="flex-1 overflow-hidden">
               <p className="text-sm font-medium text-white truncate">{user.email}</p>
-              <p className="text-xs text-slate-400 truncate">ผู้ดูแลระบบ (Admin)</p>
+              <p className="text-xs text-slate-400 truncate">{isAdmin ? 'ผู้ดูแลระบบ (Admin)' : 'ผู้ใช้งาน'}</p>
             </div>
             <button onClick={handleSignOut} className="absolute right-2 opacity-0 group-hover:opacity-100 p-2 hover:bg-slate-700 rounded-md transition-opacity">
               <LogOut className="w-4 h-4 text-red-400" />
@@ -145,7 +209,7 @@ export default function Dashboard() {
                   <CardTitle className="text-sm font-medium text-slate-500">บทความที่สร้างเสร็จแล้ว</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-slate-900">0</div>
+                  <div className="text-3xl font-bold text-slate-900">{stats.completed}</div>
                   <p className="text-xs text-slate-400 mt-1">เนื้อหาทั้งหมดในระบบ</p>
                 </CardContent>
               </Card>

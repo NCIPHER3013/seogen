@@ -5,7 +5,8 @@ import {
   Settings, Image as ImageIcon, Layout, AlignLeft,
   ChevronDown, Type, List, Link as LinkIcon, ExternalLink,
   ChevronRight, Sparkles, Send, Globe, History, DownloadCloud,
-  CheckCircle2, Pencil, Trash2, MoreVertical, Columns, Plus, Copy
+  CheckCircle2, Pencil, Trash2, MoreVertical, Columns, Plus, Copy,
+  ChevronUp
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,10 +18,13 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 import localforage from 'localforage';
 import { marked } from 'marked';
 import TurndownService from 'turndown';
 import { supabase } from '@/lib/supabase';
+import { fetchArticleById, saveArticle } from '@/lib/articles';
+import { useAdmin } from '@/hooks/useAdmin';
 
 function usePersistentState<T>(key: string, initialValue: T): [T, (value: T | ((prev: T) => T)) => void] {
   const [state, setState] = useState<T>(() => {
@@ -452,12 +456,125 @@ const WysiwygEditor = ({ content, onChange }: WysiwygEditorProps) => {
 export default function ArticleEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { isAdmin } = useAdmin();
   const [articles, setArticles] = usePersistentState<any[]>('campaign_config_generatedArticles', []);
   const [article, setArticle] = useState<any>(null);
   const [activeTab, setActiveTab] = useState('details');
   const [isEditing, setIsEditing] = useState<boolean>(true);
   const [isCopying, setIsCopying] = useState<boolean>(false);
   const titleTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverInfo, setDragOverInfo] = useState<{ index: number, position: 'top' | 'bottom' } | null>(null);
+  const [showSaveToast, setShowSaveToast] = useState<boolean>(false);
+
+  const outlineParts = (article?.content || '').split(/(?=^#{2,3}\s)/m);
+  const outlineSections = outlineParts.map((part: string, index: number) => {
+    const match = part.match(/^(#{2,3})\s([^\n]*)/);
+    const level = match ? match[1].length : 1;
+    const title = match ? match[2].replace(/\*\*/g, '').trim() : 'บทนำ (Introduction)';
+    return {
+      id: index,
+      title,
+      level,
+      content: part,
+      isHeading: !!match
+    };
+  }).filter((p: any) => p.content.trim().length > 0);
+
+  const moveSection = (index: number, direction: 'up' | 'down') => {
+    const sections = [...outlineSections];
+    if (direction === 'up' && index > 0) {
+      const temp = sections[index - 1];
+      sections[index - 1] = sections[index];
+      sections[index] = temp;
+    } else if (direction === 'down' && index < sections.length - 1) {
+      const temp = sections[index + 1];
+      sections[index + 1] = sections[index];
+      sections[index] = temp;
+    } else {
+      return;
+    }
+    const newContent = sections.map((s, idx) => {
+      let content = s.content;
+      if (!s.isHeading && idx > 0) {
+        content = `## ${s.title}\n\n` + content;
+      }
+      if (!content.endsWith('\n')) {
+        content += '\n';
+      }
+      return content;
+    }).join('');
+    handleUpdateField('content', newContent);
+  };
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    const position = e.clientY < midY ? 'top' : 'bottom';
+    
+    if (!dragOverInfo || dragOverInfo.index !== index || dragOverInfo.position !== position) {
+      setDragOverInfo({ index, position });
+    }
+  };
+  
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    // Only clear if we actually left the container
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setDragOverInfo(null);
+    }
+  };
+  
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverInfo(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || !dragOverInfo) {
+      setDraggedIndex(null);
+      setDragOverInfo(null);
+      return;
+    }
+    
+    const position = dragOverInfo.position;
+    setDragOverInfo(null);
+    
+    let targetIndex = dropIndex;
+    if (position === 'bottom') {
+      targetIndex += 1;
+    }
+
+    const sections = [...outlineSections];
+    const [draggedItem] = sections.splice(draggedIndex, 1);
+    
+    if (draggedIndex < targetIndex) {
+      targetIndex -= 1;
+    }
+    
+    sections.splice(targetIndex, 0, draggedItem);
+    
+    const newContent = sections.map((s, idx) => {
+      let content = s.content;
+      if (!s.isHeading && idx > 0) {
+        content = `## ${s.title}\n\n` + content;
+      }
+      if (!content.endsWith('\n')) {
+        content += '\n';
+      }
+      return content;
+    }).join('');
+    
+    handleUpdateField('content', newContent);
+    setDraggedIndex(null);
+  };
 
   // Auto-grow Title Textarea to fit content precisely
   useEffect(() => {
@@ -469,12 +586,44 @@ export default function ArticleEditor() {
   }, [article?.title]);
 
   useEffect(() => {
-    if (id && articles.length > 0) {
-      const found = articles.find(a => a.id === id);
-      if (found) {
-        setArticle(found);
+    async function loadArticle() {
+      if (!id) return;
+      
+      let loadedArticle: any = null;
+      
+      // Try to fetch from Supabase first
+      const dbArticle = await fetchArticleById(id);
+      if (dbArticle) {
+        loadedArticle = dbArticle;
+      } else if (articles.length > 0) {
+        // Fallback to local storage if not found in DB
+        const found = articles.find(a => a.id === id);
+        if (found) {
+          loadedArticle = found;
+        }
+      }
+
+      if (loadedArticle) {
+        // Extract the first image from markdown to act as cover_image
+        const imageRegex = /!\[.*?\]\((.*?)\)/;
+        if (!loadedArticle.cover_image && loadedArticle.content) {
+          const match = loadedArticle.content.match(imageRegex);
+          if (match) {
+            loadedArticle.cover_image = match[1];
+            // Remove the first image from the content so it doesn't show in the WYSIWYG body
+            loadedArticle.content = loadedArticle.content.replace(imageRegex, '').replace(/^\s*[\r\n]/gm, '');
+          }
+        }
+        
+        // Auto-format AI output: Fix squished lists (e.g., "1. foo 2. bar" -> newlines)
+        if (loadedArticle.content) {
+          loadedArticle.content = loadedArticle.content.replace(/([ก-๙a-zA-Z”"’')>])\s*((?:\*\*)?\d+\.(?:\*\*)?\s+)/g, '$1\n\n$2');
+        }
+        
+        setArticle(loadedArticle);
       }
     }
+    loadArticle();
   }, [id, articles]);
 
   useEffect(() => {
@@ -549,9 +698,19 @@ export default function ArticleEditor() {
     setArticle((prev: any) => ({ ...prev, [field]: value }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    // Save to local state just in case
     setArticles(prev => prev.map(a => a.id === article.id ? article : a));
-    alert('บันทึกบทความเรียบร้อยแล้ว');
+    
+    // Save to Supabase
+    try {
+      await saveArticle(article.title, article.content, 'Completed', article.id);
+      setShowSaveToast(true);
+      setTimeout(() => setShowSaveToast(false), 3000);
+    } catch (e) {
+      console.error('Failed to save to Supabase:', e);
+      alert('บันทึกในเครื่องสำเร็จ แต่ไม่สามารถบันทึกลงฐานข้อมูลได้');
+    }
   };
 
   const handleCopyToWordNotion = async () => {
@@ -622,14 +781,22 @@ export default function ArticleEditor() {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
-          <Badge variant="secondary" className="bg-[#52c41a1a] text-[#52c41a] hover:bg-[#52c41a1a] border-0 px-3 py-1 rounded-full font-medium hidden sm:flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#52c41a]" />
-            527 Credits
-          </Badge>
-          <Button variant="outline" size="sm" className="hidden border-slate-200 text-slate-600 font-semibold md:flex">
-            Upgrade
-          </Button>
+          {!isAdmin && (
+          <>
+            <Badge variant="secondary" className="bg-[#52c41a1a] text-[#52c41a] hover:bg-[#52c41a1a] border-0 px-3 py-1 rounded-full font-medium hidden sm:flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-[#52c41a]" />
+              527 Credits
+            </Badge>
+            <Button variant="outline" size="sm" className="hidden border-slate-200 text-slate-600 font-semibold md:flex">
+              Upgrade
+            </Button>
+          </>
+          )}
           <Separator orientation="vertical" className="h-6 mx-1 hidden sm:block" />
+          <Button onClick={handleSave} size="sm" className="bg-purple-600 hover:bg-purple-700 text-white font-medium shadow-sm px-4">
+            <Save className="w-4 h-4 mr-1.5" />
+            บันทึก
+          </Button>
           <Button variant="ghost" size="icon" className="text-slate-400">
             <Settings className="w-5 h-5" />
           </Button>
@@ -660,10 +827,45 @@ export default function ArticleEditor() {
                   <AlignLeft className="w-5 h-5" />
                   <span className="hidden md:inline">All Articles</span>
                 </Link>
-                <div className="md:pl-10 space-y-1 mt-1 hidden md:block">
+                <div className="md:pl-6 space-y-1 mt-1 hidden md:block h-[calc(100vh-280px)] overflow-y-auto scrollbar-hide">
                   <div className="flex items-center gap-3 px-3 py-2 text-[14px] text-slate-500">
-                    <span className="w-1 h-8 bg-slate-100 rounded-full" />
-                    <span className="truncate">Campaigns & AutoBlogs</span>
+                    <span className="w-1 h-8 bg-slate-200 rounded-full" />
+                    <span className="truncate font-medium text-slate-700">{article.title || 'Article Outline'}</span>
+                  </div>
+                  <div className="pl-1 pr-1 space-y-0.5 mt-1 pb-10" onDragLeave={handleDragLeave}>
+                    {outlineSections.map((sec, idx) => (
+                      <div key={idx}>
+                        {dragOverInfo?.index === idx && dragOverInfo.position === 'top' && (
+                          <div className="h-0.5 bg-purple-500 rounded-full w-full" />
+                        )}
+                        <div 
+                          draggable={true}
+                          onDragStart={(e) => handleDragStart(e, idx)}
+                          onDragOver={(e) => handleDragOver(e, idx)}
+                          onDrop={(e) => handleDrop(e, idx)}
+                          onDragEnd={handleDragEnd}
+                          className={`group flex items-center justify-between px-2 py-1.5 rounded-lg transition-all cursor-grab active:cursor-grabbing hover:bg-slate-50 ${draggedIndex === idx ? 'opacity-30' : ''}`}
+                        >
+                          <span className={`text-[12.5px] truncate text-slate-600 ${sec.level === 3 ? 'pl-3 text-slate-400' : ''}`} title={sec.title}>
+                            {sec.title}
+                          </span>
+                          <div className="hidden group-hover:flex items-center gap-0.5 shrink-0 ml-1">
+                            <button onClick={() => moveSection(idx, 'up')} disabled={idx === 0} className="text-slate-300 hover:text-purple-600 disabled:opacity-30 p-1">
+                              <ChevronUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => moveSection(idx, 'down')} disabled={idx === outlineSections.length - 1} className="text-slate-300 hover:text-purple-600 disabled:opacity-30 p-1">
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                        {dragOverInfo?.index === idx && dragOverInfo.position === 'bottom' && (
+                          <div className="h-0.5 bg-purple-500 rounded-full w-full" />
+                        )}
+                      </div>
+                    ))}
+                    {outlineSections.length === 0 && (
+                      <p className="px-3 text-[12px] text-slate-400 italic">No headings found</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -720,10 +922,6 @@ export default function ArticleEditor() {
                     )}
                   </Button>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Badge className="bg-purple-100 text-purple-700 border-0 hover:bg-purple-100 px-3 py-1 font-bold">Original</Badge>
-                  <Badge variant="outline" className="text-slate-400 border-slate-200">Revision</Badge>
-                </div>
               </div>
 
               {/* Unified Styled Article Body */}
@@ -734,7 +932,7 @@ export default function ArticleEditor() {
                     <textarea
                       ref={titleTextareaRef}
                       rows={1}
-                      value={article.title}
+                      value={article.title || ''}
                       onChange={(e) => handleUpdateField('title', e.target.value)}
                       className="w-full text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight leading-snug border-0 border-b border-dashed border-slate-200 focus:border-purple-300 hover:bg-slate-50/50 p-2 -ml-2 rounded-xl transition-all focus-visible:ring-0 resize-none bg-transparent outline-none focus:outline-none placeholder:text-slate-300 font-sans overflow-hidden"
                       placeholder="ชื่อบทความ (Article Title)..."
@@ -763,7 +961,7 @@ export default function ArticleEditor() {
                 ) : (
                   <div className="markdown-body max-w-none text-[17px] leading-relaxed text-slate-800 font-sans pb-16">
                     <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
+                      remarkPlugins={[remarkGfm, remarkBreaks]}
                       components={{
                         img: MarkdownImage
                       }}
@@ -780,8 +978,7 @@ export default function ArticleEditor() {
           <aside className="w-full md:w-80 bg-white border-l border-slate-100 py-6 px-5 overflow-y-auto space-y-8 scrollbar-hide">
             {/* Action Header in Sidebar */}
             <div className="flex items-center gap-4 text-[13px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-              <span className={activeTab === 'details' ? 'text-purple-600 border-b-2 border-purple-600 pb-1' : ''} onClick={() => setActiveTab('details')}>Details</span>
-              <span className={activeTab === 'ai' ? 'text-purple-600 border-b-2 border-purple-600 pb-1' : ''} onClick={() => setActiveTab('ai')}>AI Assistant</span>
+              <span className="text-purple-600 border-b-2 border-purple-600 pb-1">Details</span>
             </div>
 
             <div className="space-y-6">
@@ -803,15 +1000,17 @@ export default function ArticleEditor() {
               <div className="space-y-3">
                 <Label className="text-[13px] font-bold text-slate-700">Focus Keyword</Label>
                 <Input
-                  value={article.keyword}
+                  value={article.keyword || ''}
+                  onChange={(e) => handleUpdateField('keyword', e.target.value)}
                   className="h-10 bg-slate-50 border-slate-100 rounded-lg text-[13px] font-medium text-slate-800"
-                  readOnly
                 />
               </div>
 
               <div className="space-y-3">
                 <Label className="text-[13px] font-bold text-slate-700">Meta Description</Label>
                 <Textarea
+                  value={article.meta_description || ''}
+                  onChange={(e) => handleUpdateField('meta_description', e.target.value)}
                   placeholder="Enter meta description here..."
                   className="min-h-[140px] text-[13px] leading-relaxed bg-slate-50 border-slate-100 rounded-lg text-slate-600 placeholder:text-slate-400"
                 />
@@ -820,11 +1019,10 @@ export default function ArticleEditor() {
               <div className="space-y-4">
                 <Label className="text-[13px] font-bold text-slate-700">Featured Image</Label>
                 <div className="aspect-video bg-slate-100 rounded-2xl overflow-hidden relative group">
-                  <img
-                    src={`https://image.pollinations.ai/prompt/realistic-photo-for-${article.keyword.replace(/ /g, '-')}-workspace-warehouse?width=800&height=450&nologo=true`}
+                  <MarkdownImage
+                    src={article.cover_image || `https://image.pollinations.ai/prompt/realistic-photo-for-${(article.keyword || 'article').replace(/ /g, '-')}-workspace-warehouse?width=800&height=450&nologo=true`}
                     alt="Cover"
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover m-0 rounded-none shadow-none"
                   />
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all">
                     <Button size="sm" className="bg-white text-slate-900 hover:bg-white/90 font-bold rounded-full">
@@ -854,6 +1052,19 @@ export default function ArticleEditor() {
           </aside>
         </main>
       </div>
+      
+      {/* Save Success Toast */}
+      {showSaveToast && (
+        <div className="fixed bottom-6 right-6 z-[100] flex items-center gap-3 bg-slate-900 text-white px-5 py-3.5 rounded-xl shadow-2xl animate-in slide-in-from-bottom-5 fade-in duration-300">
+          <div className="bg-green-500/20 p-1.5 rounded-full">
+            <CheckCircle2 className="w-5 h-5 text-green-400" />
+          </div>
+          <div>
+            <p className="text-[14px] font-bold">บันทึกเสร็จสิ้น</p>
+            <p className="text-[12px] text-slate-300">อัปเดตบทความลงฐานข้อมูลเรียบร้อยแล้ว</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
