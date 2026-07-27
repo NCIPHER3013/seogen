@@ -18,7 +18,7 @@ async function startServer() {
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   // ใช้ https module โดยตรงเพื่อหลีกเลี่ยง Headers Timeout Error ของ Node.js native fetch
-  function fetchHttpsJson(url: string, body: string, headers: Record<string, string>, timeoutMs = 300000): Promise<{ status: number; data: any }> {
+  function fetchHttpsJson(url: string, body: string, headers: Record<string, string>, timeoutMs = 600000): Promise<{ status: number; data: any }> {
     return new Promise((resolve, reject) => {
       const urlObj = new URL(url);
       const req = https.request({
@@ -55,7 +55,7 @@ async function startServer() {
   // API proxy route using standard Gemini API
   app.post("/api/proxy/completions", async (req, res) => {
     try {
-      let { messages, temperature } = req.body;
+      let { messages } = req.body;
       
       // Using the API Key provided by the user
       const customApiKey = "";
@@ -103,9 +103,40 @@ async function startServer() {
 
   app.post("/api/gemini/generate", async (req, res) => {
     try {
-      const { model, contents, config } = req.body;
+      let { model, contents, config } = req.body;
       
-      const apiKey = req.headers['x-api-key'] as string || process.env.GEMINI_API_KEY;
+      const clientApiKey = req.headers['x-api-key'] as string;
+      const useGlobal = !clientApiKey || clientApiKey === '__USE_GLOBAL__';
+      let apiKey = clientApiKey;
+      let globalConfig: GlobalAISettings | null = null;
+
+      if (useGlobal) {
+        globalConfig = await getGlobalAISettings();
+        if (!globalConfig) {
+          return res.status(500).json({ error: "ไม่มีการตั้งค่า API Key ของระบบ — กรุณาแจ้ง Admin ตั้งค่า AI" });
+        }
+        // ตรวจจับประเภท request จาก marker
+        const isImageRequest = model === '__GLOBAL_IMAGE__';
+        if (isImageRequest) {
+          apiKey = globalConfig.image_api_key || '';
+          model = globalConfig.image_api_model || undefined;
+          config = config || {};
+          config.baseUrl = globalConfig.image_api_base_url || undefined;
+        } else {
+          // text request (model === '__GLOBAL_TEXT__' หรือค่าอื่นๆ)
+          apiKey = globalConfig.text_api_key || '';
+          model = globalConfig.text_api_model || undefined;
+          config = config || {};
+          config.baseUrl = globalConfig.text_api_base_url || undefined;
+        }
+        if (!apiKey) {
+          return res.status(500).json({ error: isImageRequest ? "ไม่มี Image API Key ในระบบ" : "ไม่มี Text API Key ในระบบ" });
+        }
+        console.log(`[Server] GLOBAL ${isImageRequest ? 'IMAGE' : 'TEXT'} → model: ${model}, baseUrl: ${config.baseUrl}`);
+      } else if (!apiKey) {
+        apiKey = process.env.GEMINI_API_KEY;
+      }
+
       if (!apiKey) {
         return res.status(500).json({ error: "Missing API Key" });
       }
@@ -114,6 +145,8 @@ async function startServer() {
       const hasCustomBaseUrl = config && config.baseUrl && config.baseUrl.trim() !== '';
       const isZAIModel = model && (model.toLowerCase().startsWith("glm-") || model.toLowerCase().startsWith("cogview"));
       const isSeedreamModel = model && model.toLowerCase().includes("seedream");
+      
+      // NOTE: เมื่อ useGlobal ค่า model/baseUrl/apiKey ถูก override จาก DB ทั้งหมดแล้วด้านบน
       
       // ---- IMAGE GENERATION (Seedream / OpenAI image) ----
       if (isImageModel && (apiKey.startsWith("sk-") || apiKey.startsWith("ark-") || hasCustomBaseUrl || isZAIModel || isSeedreamModel)) {
@@ -206,29 +239,36 @@ async function startServer() {
         }
       }
 
-      const isImageReq = contents && !contents.includes("System Instructions:");
-      if (isImageReq) {
-        return res.status(400).json({ error: "Image generation requires Seedream API key. Please configure image API key in settings." });
-      }
+      // (image request ถูกจัดการที่ block ด้านบนแล้ว — ถึงตรงนี้คือ text request แน่นอน)
 
-      // ---- TEXT GENERATION (Z.ai / Gemini) ----
-      const isOpenAI = apiKey.startsWith("sk-") || apiKey.includes(".") || hasCustomBaseUrl || (model && (model.startsWith("gpt-") || model.startsWith("o1") || model.startsWith("o3") || model.toLowerCase().startsWith("glm-") || model.toLowerCase().startsWith("claude-")));
+      // ---- TEXT GENERATION (ByteDance Ark / Z.ai / Gemini) ----
+      const isArkKey = apiKey.startsWith("ark-");
+      const isDeepSeekModel = model && model.toLowerCase().startsWith("deepseek-");
+      const isOpenAI = apiKey.startsWith("sk-") || apiKey.includes(".") || isArkKey || hasCustomBaseUrl || (model && (model.startsWith("gpt-") || model.startsWith("o1") || model.startsWith("o3") || model.toLowerCase().startsWith("glm-") || model.toLowerCase().startsWith("claude-") || model.toLowerCase().startsWith("deepseek-")));
       
       console.log(`[Server] Text generation model: ${model}, isOpenAI: ${isOpenAI}, config.baseUrl: "${config?.baseUrl}", hasCustomBaseUrl: ${hasCustomBaseUrl}`);
       
       if (isOpenAI) {
           let baseUrl = (config?.baseUrl && config.baseUrl !== 'undefined' && config.baseUrl.trim()) ? config.baseUrl.replace(/\/+$/, '').trim() : '';
           if (!baseUrl) {
-             if (model && model.toLowerCase().startsWith("glm-")) {
+             if (isArkKey || isDeepSeekModel) {
+                  baseUrl = "https://ark.ap-southeast.bytepluses.com/api/v3";
+             } else if (model && model.toLowerCase().startsWith("glm-")) {
                   baseUrl = "https://api.z.ai/api/coding/paas/v4";
              } else {
                   baseUrl = "https://api.openai.com/v1";
              }
           }
           const endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
-          const actualModel = model || "glm-5";
+          let actualModel = model || (isArkKey ? "deepseek-v4-flash-260425" : "glm-5");
 
-          console.log(`[Server] Z.ai request → ${endpoint}, model: ${actualModel}`);
+          // Detect provider name จาก endpoint เพื่อแสดง log ที่ถูกต้อง
+          const providerName = endpoint.includes('bytepluses') ? 'ByteDance Ark'
+            : endpoint.includes('z.ai') ? 'Z.ai'
+            : endpoint.includes('openai.com') ? 'OpenAI'
+            : endpoint.includes('bigmodel') ? 'ZhipuAI'
+            : 'AI';
+          console.log(`[Server] ${providerName} request → ${endpoint}, model: ${actualModel}`);
 
           let responseData: { status: number; data: any };
           try {
@@ -236,7 +276,8 @@ async function startServer() {
               endpoint,
               JSON.stringify({
                 model: actualModel,
-                messages: [{ role: "user", content: contents }]
+                messages: [{ role: "user", content: contents }],
+                max_tokens: isArkKey ? 16384 : 8192
               }),
               {
                 "Content-Type": "application/json",
@@ -244,11 +285,11 @@ async function startServer() {
               }
             );
           } catch (fetchErr: any) {
-            console.error(`[Server] Z.ai fetch failed: ${fetchErr.message}`, fetchErr.cause);
+            console.error(`[Server] ${providerName} fetch failed: ${fetchErr.message}`, fetchErr.cause);
             if (fetchErr.message === 'Timeout') {
-              return res.status(500).json({ error: `Z.ai API หมดเวลา (Timeout 15 นาที) — กรุณาลองใหม่ หรือปรับลดความยาวเนื้อหาลง` });
+              return res.status(500).json({ error: `${providerName} API หมดเวลา (Timeout 15 นาที) — กรุณาลองใหม่ หรือปรับลดความยาวเนื้อหาลง` });
             }
-            return res.status(500).json({ error: `เชื่อมต่อ Z.ai ไม่ได้: ${fetchErr.message}` });
+            return res.status(500).json({ error: `เชื่อมต่อ ${providerName} ไม่ได้: ${fetchErr.message}` });
           }
 
           const { status, data } = responseData;
@@ -259,12 +300,12 @@ async function startServer() {
             } else if (typeof data === 'string') {
               errMsg = data;
             }
-            console.error(`[Server] Z.ai API error (${status}):`, errMsg);
+            console.error(`[Server] ${providerName} API error (${status}):`, errMsg);
             return res.status(status).json({ error: errMsg });
           }
 
           const fullText = data.choices?.[0]?.message?.content || "";
-          console.log(`[Server] Z.ai response OK, text length: ${fullText.length}`);
+          console.log(`[Server] ${providerName} response OK, text length: ${fullText.length}`);
           return res.json({ text: fullText });
       } else {
         const ai = new GoogleGenAI({ apiKey });
@@ -287,7 +328,7 @@ async function startServer() {
   });
 
   // Global error handler
-  app.use((err: any, req: any, res: any, next: any) => {
+  app.use((err: any, req: any, res: any, _next: any) => {
     console.error(`[Server] Unhandled error on ${req.method} ${req.url}:`, err.message, err.stack);
     if (!res.headersSent) {
       res.status(500).json({ error: err.message || "Internal Server Error" });
@@ -297,36 +338,68 @@ async function startServer() {
   // Streaming text generation endpoint (SSE) — ใช้ https module เพื่อหลีกเลี่ยง Headers Timeout Error
   app.post("/api/gemini/stream-text", async (req, res) => {
     try {
-      const { model, contents, config } = req.body;
-      const apiKey = req.headers['x-api-key'] as string || process.env.GEMINI_API_KEY;
+      let { model, contents, config } = req.body;
+      const clientApiKey = req.headers['x-api-key'] as string;
+      const useGlobal = !clientApiKey || clientApiKey === '__USE_GLOBAL__';
+      let apiKey = clientApiKey;
+
+      // ถ้า client ไม่ส่ง key → ใช้ global settings จาก DB
+      if (useGlobal) {
+        const globalConfig = await getGlobalAISettings();
+        if (!globalConfig || !globalConfig.text_api_key) {
+          return res.status(500).json({ error: "ยังไม่ได้ตั้งค่า Text API Key ของระบบ — กรุณาแจ้ง Admin" });
+        }
+        apiKey = globalConfig.text_api_key;
+        // บังคับ override model และ baseUrl ด้วย global settings เสมอ
+        // (ไม่สนค่าที่ client ส่งมา เพราะอาจเป็นค่าเก่าที่ค้างใน localStorage)
+        // รองรับทั้ง marker '__GLOBAL_TEXT__' และค่าอื่นๆ
+        model = globalConfig.text_api_model || undefined;
+        config = config || {};
+        config.baseUrl = globalConfig.text_api_base_url || undefined;
+        console.log('[Server] GLOBAL TEXT (stream) → model:', model, 'baseUrl:', config.baseUrl);
+      } else if (!apiKey) {
+        apiKey = process.env.GEMINI_API_KEY;
+      }
+
       if (!apiKey) {
         return res.status(500).json({ error: "Missing API Key" });
       }
 
       const hasCustomBaseUrl = config && config.baseUrl && config.baseUrl.trim() !== '';
-      const isOpenAI = apiKey.startsWith("sk-") || apiKey.includes(".") || hasCustomBaseUrl || (model && (model.startsWith("gpt-") || model.startsWith("o1") || model.startsWith("o3") || model.toLowerCase().startsWith("glm-") || model.toLowerCase().startsWith("claude-")));
+      const isArkKey = apiKey.startsWith("ark-");
+      const isDeepSeekModel = model && model.toLowerCase().startsWith("deepseek-");
+      const isOpenAI = apiKey.startsWith("sk-") || apiKey.includes(".") || isArkKey || hasCustomBaseUrl || (model && (model.startsWith("gpt-") || model.startsWith("o1") || model.startsWith("o3") || model.toLowerCase().startsWith("glm-") || model.toLowerCase().startsWith("claude-") || model.toLowerCase().startsWith("deepseek-")));
 
       if (!isOpenAI) {
-        return res.status(400).json({ error: "Streaming supports OpenAI-compatible APIs only (Z.ai, OpenAI, etc.)" });
+        return res.status(400).json({ error: "Streaming supports OpenAI-compatible APIs only (ByteDance Ark, Z.ai, OpenAI, etc.)" });
       }
 
       let baseUrl = (config?.baseUrl && config.baseUrl !== 'undefined' && config.baseUrl.trim()) ? config.baseUrl.replace(/\/+$/, '').trim() : '';
       if (!baseUrl) {
-        if (model && model.toLowerCase().startsWith("glm-")) {
+        if (isArkKey || isDeepSeekModel) {
+          baseUrl = "https://ark.ap-southeast.bytepluses.com/api/v3";
+        } else if (model && model.toLowerCase().startsWith("glm-")) {
           baseUrl = "https://api.z.ai/api/coding/paas/v4";
         } else {
           baseUrl = "https://api.openai.com/v1";
         }
       }
       const endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
-      const actualModel = model || "glm-5";
+      const actualModel = model || (isArkKey ? "deepseek-v4-flash-260425" : "glm-5");
 
-      console.log(`[Server] Stream text → ${endpoint}, model: ${actualModel}`);
+      // Detect provider name จาก endpoint
+      const streamProviderName = endpoint.includes('bytepluses') ? 'ByteDance Ark'
+        : endpoint.includes('z.ai') ? 'Z.ai'
+        : endpoint.includes('openai.com') ? 'OpenAI'
+        : endpoint.includes('bigmodel') ? 'ZhipuAI'
+        : 'AI';
+      console.log(`[Server] ${streamProviderName} stream → ${endpoint}, model: ${actualModel}`);
 
       const body = JSON.stringify({
         model: actualModel,
         messages: [{ role: "user", content: contents }],
-        stream: true
+        stream: true,
+        max_tokens: isArkKey ? 16384 : 8192
       });
 
       const urlObj = new URL(endpoint);
@@ -382,7 +455,7 @@ async function startServer() {
       httpsReq.on('timeout', () => {
         httpsReq.destroy();
         if (!res.headersSent) {
-          res.status(500).json({ error: 'Z.ai API หมดเวลา (Timeout 15 นาที)' });
+          res.status(500).json({ error: `${streamProviderName} API หมดเวลา (Timeout 15 นาที)` });
         } else {
           try {
             res.write(`data: ${JSON.stringify({ error: 'Timeout' })}\n\n`);
@@ -411,6 +484,80 @@ async function startServer() {
     connectionString: `postgresql://postgres:${encodedPassword}@db.${dbProjectId}.supabase.co:5432/postgres`,
     ssl: { rejectUnauthorized: false },
   }) : null;
+
+  // ===== Auto-migration: สร้างตาราง global_settings ถ้ายังไม่มี =====
+  async function ensureGlobalSettingsTable() {
+    if (!pool) return;
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS public.global_settings (
+          id SMALLINT PRIMARY KEY DEFAULT 1,
+          text_api_key TEXT,
+          text_api_model TEXT,
+          text_api_base_url TEXT,
+          image_api_key TEXT,
+          image_api_model TEXT,
+          image_api_base_url TEXT,
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+          CONSTRAINT single_row CHECK (id = 1)
+        );
+        INSERT INTO public.global_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+      `);
+      console.log('[DB] global_settings table ready');
+    } catch (e: any) {
+      console.error('[DB] Failed to ensure global_settings:', e.message);
+    }
+  }
+  await ensureGlobalSettingsTable();
+
+  // ===== Auto-migration: เพิ่ม column ที่ขาดใน articles table =====
+  async function ensureArticlesColumns() {
+    if (!pool) return;
+    try {
+      // เพิ่ม column keyword, language, seo_score ถ้ายังไม่มี (Postgres ADD COLUMN IF NOT EXISTS)
+      await pool.query(`
+        ALTER TABLE public.articles
+          ADD COLUMN IF NOT EXISTS keyword TEXT,
+          ADD COLUMN IF NOT EXISTS language TEXT,
+          ADD COLUMN IF NOT EXISTS seo_score INTEGER DEFAULT 0;
+      `);
+      console.log('[DB] articles columns ready');
+    } catch (e: any) {
+      console.error('[DB] Failed to ensure articles columns:', e.message);
+    }
+  }
+  await ensureArticlesColumns();
+
+  // ===== Helper: ดึง global AI settings จาก DB =====
+  type GlobalAISettings = {
+    text_api_key: string | null;
+    text_api_model: string | null;
+    text_api_base_url: string | null;
+    image_api_key: string | null;
+    image_api_model: string | null;
+    image_api_base_url: string | null;
+    updated_at?: string | null;
+  };
+  async function getGlobalAISettings(): Promise<GlobalAISettings | null> {
+    if (!pool) return null;
+    try {
+      const { rows } = await pool.query('SELECT text_api_key, text_api_model, text_api_base_url, image_api_key, image_api_model, image_api_base_url FROM public.global_settings WHERE id = 1 LIMIT 1');
+      if (rows[0]) {
+        const s = rows[0];
+        // Debug log แบบ masked เพื่อตรวจสอบความถูกต้อง
+        const maskForLog = (k: string | null) => k ? `${k.slice(0,6)}...${k.slice(-3)} (len=${k.length})` : 'NULL';
+        console.log('[DB] Global settings:', {
+          textKey: maskForLog(s.text_api_key),
+          textModel: s.text_api_model,
+          textBaseUrl: s.text_api_base_url,
+          imageKey: maskForLog(s.image_api_key),
+        });
+      }
+      return rows[0] || null;
+    } catch {
+      return null;
+    }
+  }
 
   // Admin: ดึงข้อมูลผู้ใช้ทั้งหมด (bypass RLS)
   app.get("/api/admin/users", async (_req, res) => {
@@ -529,6 +676,123 @@ async function startServer() {
     }
   });
 
+  // ===== Admin: Global AI Settings =====
+  // GET — ส่งคืนค่าที่ masked เพื่อความปลอดภัย (API key จะแสดงเฉพาะ prefix/suffix)
+  app.get("/api/admin/settings", async (_req, res) => {
+    try {
+      if (!pool) return res.status(500).json({ error: 'DB not configured' });
+      const settings = await getGlobalAISettings();
+      if (!settings) return res.json({});
+
+      const mask = (k: string | null) => {
+        if (!k) return '';
+        if (k.length <= 12) return k.slice(0, 4) + '****';
+        return k.slice(0, 8) + '...' + k.slice(-4);
+      };
+      res.json({
+        text_api_key: mask(settings.text_api_key),
+        text_api_key_set: !!settings.text_api_key,
+        text_api_model: settings.text_api_model || '',
+        text_api_base_url: settings.text_api_base_url || '',
+        image_api_key: mask(settings.image_api_key),
+        image_api_key_set: !!settings.image_api_key,
+        image_api_model: settings.image_api_model || '',
+        image_api_base_url: settings.image_api_base_url || '',
+        updated_at: settings.updated_at,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST — บันทึกการตั้งค่า (ค่าที่ส่งมาเป็น '' จะไม่ overwrite key เดิม)
+  app.post("/api/admin/settings", async (req, res) => {
+    try {
+      if (!pool) return res.status(500).json({ error: 'DB not configured' });
+      const {
+        text_api_key, text_api_model, text_api_base_url,
+        image_api_key, image_api_model, image_api_base_url
+      } = req.body;
+
+      // Validation: ปฏิเสธค่า masked (มี '...') เพื่อป้องกันบันทึก key พัง
+      const isValidKey = (k: any): boolean => {
+        if (!k || typeof k !== 'string') return false;
+        const trimmed = k.trim();
+        if (!trimmed) return false;
+        if (trimmed.includes('...')) return false; // masked pattern
+        if (trimmed.includes('****')) return false;
+        return true;
+      };
+
+      // ทำความสะอาด baseUrl — ถ้ามี /chat/completions ต่อท้าย ให้ตัดออกเก็บแค่ root API URL
+      const cleanBaseUrl = (url: string): string => {
+        if (!url) return '';
+        let cleaned = url.trim().replace(/\/+$/, ''); // ตัด / ท้าย
+        // ตัด /chat/completions หรือ /images/generations ออก เก็บแค่ root API URL
+        cleaned = cleaned.replace(/\/chat\/completions$/, '').replace(/\/images\/generations$/, '');
+        return cleaned;
+      };
+
+      // อ่านค่าเดิมก่อน (กรณีที่ frontend ส่งค่าว่างมา = ไม่เปลี่ยน key)
+      const current = await getGlobalAISettings();
+      const newTextKey = isValidKey(text_api_key) ? text_api_key.trim() : (current?.text_api_key || null);
+      const newImageKey = isValidKey(image_api_key) ? image_api_key.trim() : (current?.image_api_key || null);
+
+      const cleanTextBaseUrl = cleanBaseUrl(text_api_base_url);
+      const cleanImageBaseUrl = cleanBaseUrl(image_api_base_url);
+
+      // Debug log (mask key ก่อน log)
+      const maskForLog = (k: string | null) => k ? `${k.slice(0,6)}...${k.slice(-3)} (len=${k.length})` : 'NULL';
+      console.log('[Settings Save]', {
+        textKey: maskForLog(newTextKey),
+        textModel: text_api_model,
+        textBaseUrl: cleanTextBaseUrl,
+        imageKey: maskForLog(newImageKey),
+        imageModel: image_api_model,
+        imageBaseUrl: cleanImageBaseUrl,
+      });
+
+      await pool.query(
+        `UPDATE public.global_settings SET
+          text_api_key = $1,
+          text_api_model = $2,
+          text_api_base_url = $3,
+          image_api_key = $4,
+          image_api_model = $5,
+          image_api_base_url = $6,
+          updated_at = now()
+        WHERE id = 1`,
+        [
+          newTextKey,
+          text_api_model || null,
+          cleanTextBaseUrl || null,
+          newImageKey,
+          image_api_model || null,
+          cleanImageBaseUrl || null,
+        ]
+      );
+      res.json({ ok: true, message: 'Settings saved' });
+    } catch (e: any) {
+      console.error('[Settings save error]', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Public endpoint สำหรับผู้ใช้ทั่วไป — บอกว่ามี global AI settings หรือไม่ (ไม่เปิดเผย key)
+  app.get("/api/settings/has-global-ai", async (_req, res) => {
+    try {
+      const settings = await getGlobalAISettings();
+      res.json({
+        hasTextKey: !!settings?.text_api_key,
+        textModel: settings?.text_api_model || null,
+        hasImageKey: !!settings?.image_api_key,
+        imageModel: settings?.image_api_model || null,
+      });
+    } catch {
+      res.json({ hasTextKey: false, hasImageKey: false });
+    }
+  });
+
   app.post("/api/fetch-url", async (req, res) => {
     try {
       const { url } = req.body;
@@ -561,7 +825,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

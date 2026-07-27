@@ -24,12 +24,12 @@ export default function LandingPage() {
 
   const features = [
     {
-      icon: <Bot className="w-6 h-6 text-purple-400" />,
+      icon: <Bot className="w-6 h-6 text-emerald-400" />,
       title: "AI Content Generation",
       description: "สร้างบทความคุณภาพสูง ดึงดูดสายตา พร้อมรูปภาพประกอบโดยอัตโนมัติภายในไม่กี่นาที"
     },
     {
-      icon: <Search className="w-6 h-6 text-pink-400" />,
+      icon: <Search className="w-6 h-6 text-lime-400" />,
       title: "SEO Optimized",
       description: "รองรับการทำ SEO แบบเจาะลึก พร้อมแนะนำ Keyword ที่จะทำให้เว็บของคุณติดหน้าแรก"
     },
@@ -50,18 +50,18 @@ export default function LandingPage() {
       
       {/* Decorative Background Gradients */}
       <div className="fixed top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
-        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-purple-600/20 blur-[120px] rounded-full mix-blend-screen" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-fuchsia-600/10 blur-[120px] rounded-full mix-blend-screen" />
+        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-emerald-600/20 blur-[120px] rounded-full mix-blend-screen" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-lime-600/10 blur-[120px] rounded-full mix-blend-screen" />
       </div>
 
       {/* Navbar */}
       <nav className="fixed top-0 w-full z-50 border-b border-white/5 bg-slate-950/50 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2 group">
-            <div className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-purple-600/20 border border-purple-500/30 group-hover:scale-105 transition-transform duration-300">
-              <Sparkles className="w-5 h-5 text-purple-400" />
+            <div className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-emerald-600/20 border border-emerald-500/30 group-hover:scale-105 transition-transform duration-300">
+              <Sparkles className="w-5 h-5 text-emerald-400" />
             </div>
-            <span className="text-xl font-bold text-white tracking-tight">z.ai<span className="text-purple-400 font-light ml-1.5">SEO Studio</span></span>
+            <span className="text-xl font-bold text-white tracking-tight">Seo<span className="text-emerald-400 font-light">Cipher</span></span>
           </Link>
           <div className="flex items-center gap-4">
             <Link to="/login" className="text-sm font-medium text-slate-300 hover:text-white transition-colors hidden sm:block">
@@ -86,7 +86,7 @@ export default function LandingPage() {
             transition={{ duration: 0.6, ease: "easeOut" }}
             className="mb-8"
           >
-            <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-sm font-medium">
+            <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-sm font-medium">
               <Sparkles className="w-4 h-4" /> แพลตฟอร์มสร้างบทความ AI อันดับ 1
             </span>
           </motion.div>
@@ -97,7 +97,7 @@ export default function LandingPage() {
             transition={{ duration: 0.7, delay: 0.1, ease: "easeOut" }}
             className="text-5xl sm:text-6xl lg:text-7xl font-extrabold text-white tracking-tight leading-[1.1] max-w-4xl"
           >
-            ปั้นเว็บไซต์ให้ติดหน้าแรก ด้วยพลังของ <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-fuchsia-400">AI</span>
+            ปั้นเว็บไซต์ให้ติดหน้าแรก ด้วยพลังของ <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-lime-400">AI</span>
           </motion.h1>
 
           <motion.p 
@@ -116,7 +116,7 @@ export default function LandingPage() {
             className="mt-10 flex flex-col sm:flex-row items-center gap-4"
           >
             <Link to="/login">
-              <Button size="lg" className="h-14 px-8 border-0 bg-gradient-to-r from-purple-600 to-fuchsia-600 hover:from-purple-500 hover:to-fuchsia-500 text-white rounded-full text-lg font-bold shadow-[0_0_40px_rgba(168,85,247,0.4)] transition-all hover:scale-105">
+              <Button size="lg" className="h-14 px-8 border-0 bg-gradient-to-r from-emerald-600 to-lime-600 hover:from-emerald-500 hover:to-lime-500 text-white rounded-full text-lg font-bold shadow-[0_0_40px_rgba(16,185,129,0.4)] transition-all hover:scale-105">
                 ทดลองใช้งานฟรี <ChevronRight className="w-5 h-5 ml-1" />
               </Button>
             </Link>
@@ -138,8 +138,8 @@ export default function LandingPage() {
         transition={{ duration: 1, ease: "easeOut" }}
         className="max-w-6xl mx-auto px-6 relative pb-24"
       >
-        <div className="relative rounded-2xl sm:rounded-3xl border border-white/10 bg-slate-900/80 p-2 sm:p-4 backdrop-blur-xl shadow-2xl shadow-purple-900/20 overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-b from-purple-500/5 to-transparent pointer-events-none" />
+        <div className="relative rounded-2xl sm:rounded-3xl border border-white/10 bg-slate-900/80 p-2 sm:p-4 backdrop-blur-xl shadow-2xl shadow-emerald-900/20 overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-b from-emerald-500/5 to-transparent pointer-events-none" />
           <div className="rounded-xl sm:rounded-2xl border border-white/5 bg-slate-950 overflow-hidden aspect-video flex flex-col relative group">
             {/* Mock Header */}
             <div className="h-12 border-b border-white/5 flex items-center px-4 gap-2 bg-slate-900">
@@ -168,7 +168,7 @@ export default function LandingPage() {
             
             <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-slate-950/60 backdrop-blur-sm">
                <Link to="/login">
-                  <Button className="bg-purple-600 border-0 hover:bg-purple-500 text-white rounded-full px-6 shadow-lg">
+                  <Button className="bg-emerald-600 border-0 hover:bg-emerald-500 text-white rounded-full px-6 shadow-lg shadow-emerald-600/30">
                     ดูตัวอย่างระบบจริง
                   </Button>
                </Link>
@@ -216,7 +216,7 @@ export default function LandingPage() {
 
       {/* Footer CTA */}
       <footer className="py-20 text-center relative z-10 overflow-hidden border-t border-white/5 bg-slate-950">
-        <div className="absolute inset-0 bg-purple-600/5 pointer-events-none" />
+        <div className="absolute inset-0 bg-emerald-600/5 pointer-events-none" />
         <div className="max-w-3xl mx-auto px-6 relative">
           <h2 className="text-3xl sm:text-4xl font-bold text-white mb-6">พร้อมที่จะเติบโตไปกับเราหรือยัง?</h2>
           <p className="text-slate-400 mb-8 text-lg">เริ่มต้นใช้งานฟรีวันนี้ ไม่มีค่าใช้จ่ายแอบแฝง</p>

@@ -6,7 +6,7 @@ import {
   Search, PlaySquare, Video, SearchCode, Edit3, Trash2, Loader2,
   AlignLeft, List, BookOpen, Type, Layout, ExternalLink,
   MoreHorizontal, Eye, Send, Newspaper, Youtube, Menu,
-  Users, BarChart3
+  Users, BarChart3, UploadCloud, CheckCircle2, Hash
 } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,12 +23,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
+import AppLayout from '@/components/AppLayout';
 import { generateArticle } from '@/services/ai';
-import { useAdmin } from '@/hooks/useAdmin';
 import { saveArticle, fetchUserArticles } from '@/lib/articles';
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import localforage from 'localforage';
 
 const MarkdownImage = ({ src, alt, ...props }: any) => {
@@ -95,6 +96,7 @@ interface ArticleConfig {
   customOpenAiApiKey?: string;
   textApiPrompt?: string;
   imageApiPrompt?: string;
+  customReplacements?: string;
 }
 
 interface ArticleItem {
@@ -126,9 +128,9 @@ const TagInput = ({ tags, setTags, placeholder }: { tags: string[], setTags: (t:
     <div className="flex flex-col gap-2 relative">
       <div className="flex flex-wrap gap-2 mb-2 min-h-[32px]">
         {tags.map(tag => (
-          <Badge key={tag} className="bg-purple-50 text-purple-600 hover:bg-purple-100 border border-purple-200 px-2.5 py-1 flex items-center gap-1.5 rounded-md text-xs font-medium transition-colors shadow-none">
+          <Badge key={tag} className="bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 flex items-center gap-1.5 rounded-md text-xs font-medium transition-colors shadow-none">
             {tag}
-            <X className="w-3 h-3 cursor-pointer text-purple-400 hover:text-purple-600" onClick={() => removeTag(tag)} />
+            <X className="w-3 h-3 cursor-pointer text-emerald-400 hover:text-emerald-600" onClick={() => removeTag(tag)} />
           </Badge>
         ))}
       </div>
@@ -138,7 +140,7 @@ const TagInput = ({ tags, setTags, placeholder }: { tags: string[], setTags: (t:
         onKeyDown={handleKeyDown}
         placeholder={tags.length >= 5 ? "จำกัดคีย์เวิร์ดสูงสุดแล้ว" : placeholder}
         disabled={tags.length >= 5}
-        className="bg-white border-slate-200 rounded-lg focus-visible:ring-purple-500"
+        className="bg-white border-slate-100 rounded-lg focus-visible:ring-emerald-500"
       />
       <p className="text-xs text-slate-500 mt-1 text-right">{tags.length} / 5 keywords</p>
     </div>
@@ -166,9 +168,9 @@ const InlineTagInput = ({ tags, setTags, placeholder, buttonText, maxTags = 10 }
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
         {tags.map((tag, idx) => (
-          <div key={`${tag}-${idx}`} className="flex items-center gap-1.5 bg-slate-100 px-3 py-1.5 rounded-lg group hover:bg-slate-200 transition-colors">
+          <div key={`${tag}-${idx}`} className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-lg group hover:bg-slate-200 transition-colors">
             <span className="text-sm text-slate-700 font-medium">{tag}</span>
-            <X className="w-4 h-4 cursor-pointer text-slate-400 hover:text-red-500" onClick={() => removeTag(tag)} />
+            <X className="w-4 h-4 cursor-pointer text-slate-500 hover:text-red-500" onClick={() => removeTag(tag)} />
           </div>
         ))}
       </div>
@@ -189,7 +191,7 @@ const InlineTagInput = ({ tags, setTags, placeholder, buttonText, maxTags = 10 }
             }
           }}
           disabled={!input.trim() || tags.length >= maxTags}
-          className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl px-6 h-12"
+          className="bg-emerald-600 hover:bg-emerald-700 text-slate-900 rounded-xl px-6 h-12"
         >
           {buttonText || "Add"}
         </Button>
@@ -229,7 +231,7 @@ const DynamicInputList = ({ items, setItems, placeholder, buttonText, maxItems =
       {items.length < maxItems && (
         <div 
           onClick={() => setItems([...items, ""])}
-          className="flex items-center text-purple-600 font-semibold cursor-pointer pt-1 hover:underline underline-offset-2 w-max"
+          className="flex items-center text-emerald-600 font-semibold cursor-pointer pt-1 hover:underline underline-offset-2 w-max"
         >
           <Plus className="w-4 h-4 mr-1.5" />
           {buttonText}
@@ -242,7 +244,6 @@ const DynamicInputList = ({ items, setItems, placeholder, buttonText, maxItems =
 export default function CampaignSetup() {
   const navigate = useNavigate();
   const [user, setUser] = useState<any>(null);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user }, error }) => {
@@ -620,10 +621,23 @@ export default function CampaignSetup() {
 
     useEffect(() => {
       if (user?.id) {
-        const saved = localStorage.getItem(`campaign_config_${user.id}_${key}`);
+        let saved = localStorage.getItem(`campaign_config_${user.id}_${key}`);
+        
         if (saved !== null) {
           try {
-            const parsed = JSON.parse(saved);
+            let parsed: any = JSON.parse(saved);
+            
+            // Migration: แก้ค่า URL เก่าที่ผิดอัตโนมัติ
+            if (typeof parsed === 'string') {
+              if (parsed.includes('SeoCipher') || parsed.includes('seocipher')) {
+                console.warn(`[Migration] Fixing broken baseUrl for ${key}: ${parsed}`);
+                parsed = 'https://api.z.ai/api/coding/paas/v4';
+              }
+              if (parsed.includes('bytepluses.com/api/v3/images/generations')) {
+                console.warn(`[Migration] Fixing image baseUrl for ${key}: ${parsed}`);
+                parsed = 'https://ark.ap-southeast.bytepluses.com/api/v3';
+              }
+            }
             if (Array.isArray(parsed) ? parsed.length > 0 : (parsed !== null && parsed !== '')) {
               setState(parsed);
             } else {
@@ -674,14 +688,15 @@ export default function CampaignSetup() {
   
   const [internalLinks, setInternalLinks] = usePersistentState('internalLinks', '');
   const [sitemaps, setSitemaps] = usePersistentState<string[]>('sitemaps', []);
-  const [customApiKey, setCustomApiKey] = usePersistentState('customApiKey', '645139e1a8fc4ed18665660a82c7412d.tWOLRtwBoUBsr8dJ');
-  const [customOpenAiApiKey, setCustomOpenAiApiKey] = usePersistentState('customOpenAiApiKey', 'ark-a53fc090-6973-4a82-b47b-5bc5c4c952a4-b1f81');
-  const [textApiModel, setTextApiModel] = usePersistentState('textApiModel', 'glm-5');
-  const [textApiBaseUrl, setTextApiBaseUrl] = usePersistentState('textApiBaseUrl', 'https://api.z.ai/api/coding/paas/v4');
+  const [customApiKey, setCustomApiKey] = usePersistentState('customApiKey', '');
+  const [customOpenAiApiKey, setCustomOpenAiApiKey] = usePersistentState('customOpenAiApiKey', '');
+  const [textApiModel, setTextApiModel] = usePersistentState('textApiModel', 'deepseek-v4-flash-260425');
+  const [textApiBaseUrl, setTextApiBaseUrl] = usePersistentState('textApiBaseUrl', 'https://ark.ap-southeast.bytepluses.com/api/v3');
   const [textApiPrompt, setTextApiPrompt] = usePersistentState('textApiPrompt', '');
   const [imageApiModel, setImageApiModel] = usePersistentState('imageApiModel', 'seedream-4-0-250828');
-  const [imageApiBaseUrl, setImageApiBaseUrl] = usePersistentState('imageApiBaseUrl', 'https://ark.ap-southeast.bytepluses.com/api/v3/images/generations');
+  const [imageApiBaseUrl, setImageApiBaseUrl] = usePersistentState('imageApiBaseUrl', 'https://ark.ap-southeast.bytepluses.com/api/v3');
   const [imageApiPrompt, setImageApiPrompt] = usePersistentState('imageApiPrompt', '');
+  const [customReplacements, setCustomReplacements] = usePersistentState('customReplacements', '');
 
   const [isTestingText, setIsTestingText] = useState(false);
   const [testTextStatus, setTestTextStatus] = useState<{success: boolean, message: string} | null>(null);
@@ -690,24 +705,61 @@ export default function CampaignSetup() {
   const [testImageStatus, setTestImageStatus] = useState<{success: boolean, message: string} | null>(null);
 
   useEffect(() => {
-    // Migrate empty or old values to the new Z.ai & ByteDance Seedream keys/configs
-    if (!customApiKey || customApiKey === 'a70be79aa9cb48898212205ead1bcd29.Xpy23Bqe6Knurg6d') {
-      setCustomApiKey('645139e1a8fc4ed18665660a82c7412d.tWOLRtwBoUBsr8dJ');
-    }
+    // ล้าง API key เก่าที่ค้างใน localStorage (บังคับใช้ global settings จาก admin แล้ว)
+    // ทำครั้งเดียวตอน mount เพื่อเคลียร์ค่า key จริงที่เคยเก็บไว้
+    try {
+      ['customApiKey', 'customOpenAiApiKey'].forEach(k => {
+        const v = localStorage.getItem(k);
+        if (v && v !== '""' && v !== 'null') {
+          localStorage.removeItem(k);
+        }
+      });
+    } catch (e) { /* ignore */ }
+
+    // ล้าง temp articles ทั้งหมดที่ค้างใน localStorage — เก็บเฉพาะบทความที่บันทึกลง DB แล้ว (id เป็น UUID)
+    // เหตุผล: temp article ทั้งหมดจะถูกบันทึกลง DB เมื่อ generate เสร็จ ดังนั้นลบ temp ที่ค้างได้เลย
+    // นี่จะแก้ปัญหา duplicate key อย่างเด็ดขาด
+    try {
+      const raw = localStorage.getItem('generatedArticles');
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr) && arr.length > 0) {
+          // เก็บเฉพาะ article ที่ไม่ใช่ temp_* (คือบทความที่บันทึกลง DB แล้ว id เป็น UUID)
+          const cleaned = arr.filter((a: any) => {
+            if (!a || typeof a !== 'object') return false;
+            if (a.id && typeof a.id === 'string' && a.id.startsWith('temp_')) {
+              return false; // ลบ temp ทั้งหมด
+            }
+            return true;
+          });
+          // Dedup โดย id
+          const seen = new Set<string>();
+          const deduped = cleaned.filter((a: any) => {
+            if (!a.id) return false;
+            if (seen.has(a.id)) return false;
+            seen.add(a.id);
+            return true;
+          });
+          if (deduped.length !== arr.length) {
+            localStorage.setItem('generatedArticles', JSON.stringify(deduped));
+            setGeneratedArticles(deduped);
+          }
+        }
+      }
+    } catch (e) { /* ignore */ }
+
+    // Migrate model/baseUrl ให้เป็น DeepSeek + ByteDance Ark (ค่าเริ่มต้นของระบบ)
     if (!textApiModel || textApiModel === 'auto' || textApiModel === 'GLM-5-Turbo' || textApiModel === 'glm-5-turbo' || textApiModel === 'glm-4.5') {
-      setTextApiModel('glm-5');
+      setTextApiModel('deepseek-v4-flash-260425');
     }
-    if (!textApiBaseUrl || textApiBaseUrl === 'https://open.bigmodel.cn/api/paas/v4') {
-      setTextApiBaseUrl('https://api.z.ai/api/coding/paas/v4');
-    }
-    if (!customOpenAiApiKey) {
-      setCustomOpenAiApiKey('ark-a53fc090-6973-4a82-b47b-5bc5c4c952a4-b1f81');
+    if (!textApiBaseUrl || textApiBaseUrl === 'https://open.bigmodel.cn/api/paas/v4' || textApiBaseUrl === 'https://api.z.ai/api/coding/paas/v4' || textApiBaseUrl.includes('SeoCipher') || textApiBaseUrl.includes('seocipher')) {
+      setTextApiBaseUrl('https://ark.ap-southeast.bytepluses.com/api/v3');
     }
     if (!imageApiModel || imageApiModel === 'auto') {
       setImageApiModel('seedream-4-0-250828');
     }
-    if (!imageApiBaseUrl) {
-      setImageApiBaseUrl('https://ark.ap-southeast.bytepluses.com/api/v3/images/generations');
+    if (!imageApiBaseUrl || imageApiBaseUrl.includes('/images/generations')) {
+      setImageApiBaseUrl('https://ark.ap-southeast.bytepluses.com/api/v3');
     }
   }, []);
 
@@ -824,8 +876,8 @@ export default function CampaignSetup() {
           const mappedArticles = dbArticles.map(a => ({
             id: a.id,
             title: a.title,
-            keyword: a.title, // Keyword might not be saved individually, using title as fallback
-            language: 'English (US)', // Defaulting since it's not in DB
+            keyword: a.keyword || a.title,
+            language: a.language || 'English (US)',
             content: a.content,
             date: new Date(a.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric', hour12: true })
           }));
@@ -851,41 +903,58 @@ export default function CampaignSetup() {
   // Generation State
   const [activeTab, setActiveTab] = useState("inputs");
   const [generatingQueue, setGeneratingQueue] = usePersistentState<ArticleItem[]>('generatingQueue', []);
-  const [generatedArticle, setGeneratedArticle] = useState<{id: string, title: string, markdown: string} | null>(null);
+  const [generatedArticle, setGeneratedArticle] = useState<{id: string, title: string, markdown: string, content?: string, keyword?: string, language?: string} | null>(null);
   const [articleModalOpen, setArticleModalOpen] = useState(false);
 
-  const { isAdmin } = useAdmin();
 
-  const isProcessingRef = React.useRef(false);
-  const latestQueueRef = React.useRef(generatingQueue);
+  // === Concurrent Article Generation ===
+  const MAX_CONCURRENT_ARTICLES = 10;
+  const activeWorkersRef = React.useRef(new Set<string>());
+  const cancelledWorkersRef = React.useRef(new Set<string>());
+  const [activeWorkerIds, setActiveWorkerIds] = React.useState<Set<string>>(new Set());
+  const updateActiveWorkers = (add: boolean, id: string) => {
+    activeWorkersRef.current[add ? 'add' : 'delete'](id);
+    setActiveWorkerIds(new Set(activeWorkersRef.current));
+  };
 
-  useEffect(() => {
-    latestQueueRef.current = generatingQueue;
-  }, [generatingQueue]);
+  // Refs สำหรับเก็บ config ล่าสุด เพื่อให้ worker อ่านค่าได้ตลอดโดยไม่เกิด closure stale
+  const configRef = React.useRef({
+    language, tone, copywritingFramework, pov, lengthWords, audience,
+    secondaryKeywords, coverToggle, inlineCount, aspectRatio, sitemaps,
+    internalLinks, customApiKey, customOpenAiApiKey, textApiModel,
+    textApiBaseUrl, textApiPrompt, imageApiModel, imageApiBaseUrl, imageApiPrompt
+  });
+  
+  configRef.current = {
+    language, tone, copywritingFramework, pov, lengthWords, audience,
+    secondaryKeywords, coverToggle, inlineCount, aspectRatio, sitemaps,
+    internalLinks, customApiKey, customOpenAiApiKey, textApiModel,
+    textApiBaseUrl, textApiPrompt, imageApiModel, imageApiBaseUrl, imageApiPrompt
+  };
 
-  useEffect(() => {
-    const processQueue = async () => {
-      if (generatingQueue.length === 0) return;
-      if (isProcessingRef.current) return;
-
-      isProcessingRef.current = true;
-      const input = generatingQueue[0];
-      
+  const processItem = React.useCallback((input: ArticleItem) => {
+    if (activeWorkersRef.current.has(input.id)) return;
+    updateActiveWorkers(true, input.id);
+    
+    console.log(`[Worker] Start: ${input.keyword} (active: ${activeWorkersRef.current.size})`);
+    
+    (async () => {
       try {
+        const cfg = configRef.current;
         // Merge global configuration with row-specific overrides
         const activeConfig = {
-          language: input.overrides?.language || language,
-          tone: input.overrides?.tone || tone,
-          copywritingFramework: input.overrides?.copywritingFramework || copywritingFramework,
-          pov: input.overrides?.pov || pov,
-          lengthWords: input.overrides?.lengthWords || lengthWords[0],
-          audience: input.overrides?.audience || audience,
-          secondaryKeywords: input.overrides?.secondaryKeywords || secondaryKeywords,
-          coverToggle: input.overrides?.coverToggle !== undefined ? input.overrides.coverToggle : coverToggle,
-          inlineCount: input.overrides?.inlineCount !== undefined ? input.overrides.inlineCount : inlineCount[0],
-          aspectRatio: input.overrides?.aspectRatio || aspectRatio,
+          language: input.overrides?.language || cfg.language,
+          tone: input.overrides?.tone || cfg.tone,
+          copywritingFramework: input.overrides?.copywritingFramework || cfg.copywritingFramework,
+          pov: input.overrides?.pov || cfg.pov,
+          lengthWords: input.overrides?.lengthWords || cfg.lengthWords[0],
+          audience: input.overrides?.audience || cfg.audience,
+          secondaryKeywords: input.overrides?.secondaryKeywords || cfg.secondaryKeywords,
+          coverToggle: input.overrides?.coverToggle !== undefined ? input.overrides.coverToggle : cfg.coverToggle,
+          inlineCount: input.overrides?.inlineCount !== undefined ? input.overrides.inlineCount : cfg.inlineCount[0],
+          aspectRatio: input.overrides?.aspectRatio || cfg.aspectRatio,
           outline: input.overrides?.outline,
-          sitemaps: input.overrides?.sitemaps || sitemaps,
+          sitemaps: input.overrides?.sitemaps || cfg.sitemaps,
           includeLinks: input.overrides?.includeLinks,
           includeSources: input.overrides?.includeSources,
           excludeSources: input.overrides?.excludeSources,
@@ -906,77 +975,112 @@ export default function CampaignSetup() {
           linksPerH2: input.overrides?.linksPerH2,
           autoExternalLinks: input.overrides?.autoExternalLinks,
           autoYoutube: input.overrides?.autoYoutube,
-          customApiKey: customApiKey,
-          customOpenAiApiKey: customOpenAiApiKey,
-          textApiModel: textApiModel,
-          textApiBaseUrl: textApiBaseUrl,
-          textApiPrompt: textApiPrompt,
-          imageApiModel: imageApiModel,
-          imageApiBaseUrl: imageApiBaseUrl,
-          imageApiPrompt: imageApiPrompt
+          customApiKey: cfg.customApiKey,
+          customOpenAiApiKey: cfg.customOpenAiApiKey,
+          textApiModel: cfg.textApiModel,
+          textApiBaseUrl: cfg.textApiBaseUrl,
+          textApiPrompt: cfg.textApiPrompt,
+          imageApiModel: cfg.imageApiModel,
+          imageApiBaseUrl: cfg.imageApiBaseUrl,
+          imageApiPrompt: cfg.imageApiPrompt
         };
 
-        // สร้าง placeholder ก่อนเริ่ม generate เพื่อให้ live preview แสดงผลได้
-        const tempArticleId = `temp_${input.id}`;
+        const tempArticleId = `temp_${input.id}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
         const placeholderArticle = {
           id: tempArticleId,
           title: input.title || input.keyword,
           keyword: input.keyword,
-          language: input.overrides?.language || language || 'English (US)',
+          language: input.overrides?.language || cfg.language || 'English (US)',
           content: '...',
           date: new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric', hour12: true })
         };
-        setGeneratedArticles(prev => [placeholderArticle, ...prev]);
+        
+        // Dedup ก่อน add: ลบ temp article เก่าที่มี id เดียวกันออกก่อน (กัน duplicate key)
+        setGeneratedArticles(prev => {
+          const filtered = prev.filter(a => a.id !== tempArticleId);
+          return [placeholderArticle, ...filtered];
+        });
 
-        const content = await generateArticle(input.keyword, input.title, activeConfig, (partialText, stage) => {
-          // Live preview — อัปเดตเนื้อหาที่กำลัง generate แสดงผลทันที
+        // Throttle onChunk เพื่อลด React re-render ระหว่าง concurrent streaming
+        let latestPartialText = '';
+        let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+        const throttledUpdate = () => {
+          if (throttleTimer) return;
+          throttleTimer = setTimeout(() => {
+            throttleTimer = null;
+            if (cancelledWorkersRef.current.has(input.id)) return;
+            setGeneratedArticles(prev => {
+              const idx = prev.findIndex(a => a.id === tempArticleId);
+              if (idx >= 0 && latestPartialText) {
+                const updated = [...prev];
+                updated[idx] = { ...updated[idx], content: latestPartialText };
+                return updated;
+              }
+              return prev;
+            });
+          }, 200);
+        };
+
+        const content = await generateArticle(input.keyword, input.title, activeConfig, (partialText) => {
+          if (cancelledWorkersRef.current.has(input.id)) return;
+          latestPartialText = partialText;
+          throttledUpdate();
+        });
+
+        // Flush ข้อความสุดท้ายหลัง generate เสร็จ
+        if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = null; }
+        if (latestPartialText) {
           setGeneratedArticles(prev => {
             const idx = prev.findIndex(a => a.id === tempArticleId);
-            if (idx >= 0 && partialText) {
+            if (idx >= 0) {
               const updated = [...prev];
-              updated[idx] = { ...updated[idx], content: partialText };
+              updated[idx] = { ...updated[idx], content: latestPartialText };
               return updated;
             }
             return prev;
           });
-        });
+        }
 
-        // Check if item was removed from queue while waiting
-        if (!latestQueueRef.current.some(q => q.id === input.id)) {
-          return; // Skip saving, let finally block reset processing ref
+        if (cancelledWorkersRef.current.has(input.id)) {
+          console.log(`[Worker] Cancelled: ${input.keyword}`);
+          cancelledWorkersRef.current.delete(input.id);
+          updateActiveWorkers(false, input.id);
+          return;
         }
 
         if (!content || content.trim().length === 0) {
-          throw new Error('AI ไม่ได้ส่งเนื้อหาบทความกลับมา (ได้รับเนื้อหาว่างเปล่า)');
+          throw new Error('AI ไม่ได้ส่งเนื้อหาบทความกลับมา');
         }
 
         const newArticle = {
-          id: tempArticleId, // ใช้ id เดียวกับ placeholder เพื่อ replace
+          id: tempArticleId,
           title: input.title || input.keyword,
           keyword: input.keyword,
-          language: input.overrides?.language || language || 'English (US)',
+          language: input.overrides?.language || cfg.language || 'English (US)',
           content: content,
           date: new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric', hour12: true })
         };
 
         try {
-          const savedDbArticle = await saveArticle(newArticle.title, newArticle.content, 'Completed');
+          console.log(`[Worker] Saving article, content length: ${newArticle.content?.length || 0}`);
+          const savedDbArticle = await saveArticle(newArticle.title, newArticle.content, 'Completed', undefined, newArticle.keyword, newArticle.language);
           if (savedDbArticle) {
-            newArticle.id = savedDbArticle.id; // Use DB ID instead of temp ID
+            console.log(`[Worker] Saved to DB, returned content length: ${savedDbArticle.content?.length || 0}`);
+            newArticle.id = savedDbArticle.id;
+          } else {
+            console.error(`[Worker] saveArticle returned null!`);
           }
         } catch (dbErr) {
-          console.error('Failed to save to Supabase', dbErr);
+          console.error('[Worker] Failed to save to Supabase', dbErr);
         }
 
         setGeneratedArticles(prev => {
-           // We need to replace tempArticleId with the newArticle, including its updated ID if it was saved
-           const filtered = prev.filter(a => a.id !== tempArticleId);
-           return [newArticle, ...filtered];
+          const filtered = prev.filter(a => a.id !== tempArticleId);
+          return [newArticle, ...filtered];
         });
-        
-        // Toast notification
+
         const toast = document.createElement('div');
-        toast.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white rounded-full px-6 py-3 text-sm font-medium shadow-xl flex items-center gap-3 z-50 animate-in fade-in slide-in-from-bottom-4';
+        toast.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-white text-slate-900 rounded-full px-6 py-3 text-sm font-medium shadow-xl flex items-center gap-3 z-50 animate-in fade-in slide-in-from-bottom-4';
         toast.innerHTML = `<svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> บทความ "${newArticle.title}" สร้างเสร็จแล้ว`;
         document.body.appendChild(toast);
         setTimeout(() => {
@@ -985,54 +1089,31 @@ export default function CampaignSetup() {
         }, 3000);
 
       } catch (err: any) {
-        if (err.message?.includes('โควต้า') || err.message?.includes('Quota Exceeded') || err.message?.includes('quota') || err.message?.includes('429')) {
-          // Restore all queued items back to inputs
-          setInputs(prev => {
-            const newInputs = [...prev];
-            generatingQueue.forEach(item => {
-              if (!newInputs.some(i => i.id === item.id)) {
-                newInputs.push(item);
-              }
-            });
-            return newInputs;
-          });
-          setGeneratingQueue([]);
-          
-          const toast = document.createElement('div');
-          toast.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-red-600 text-white rounded-xl px-6 py-4 text-sm font-medium shadow-2xl flex flex-col items-center gap-3 z-[9999] animate-in fade-in slide-in-from-bottom-4 max-w-[90vw] text-center';
-          toast.innerHTML = `
-          <div class="flex items-center gap-3">
-             <svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> 
-             <div class="font-bold">โควต้า API เต็ม (Rate Limit) หรือ Token หมด</div>
-          </div>
-          <div class="text-xs text-white/80 max-w-[500px] break-words text-left bg-black/20 p-2 rounded">${err.message}</div>`;
-          document.body.appendChild(toast);
-          setTimeout(() => {
-            toast.classList.add('fade-out', 'slide-out-to-bottom-4');
-            setTimeout(() => toast.remove(), 300);
-          }, 8000);
-
-        } else {
-          // Restore the failed input back to inputs list
-          setInputs(prev => {
-            if (prev.some(i => i.id === input.id)) return prev;
-            return [...prev, input];
-          });
-          
-          const toast = document.createElement('div');
-          toast.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-red-600 text-white rounded-xl px-4 py-3 text-sm font-medium shadow-2xl flex items-center gap-3 z-[9999] animate-in fade-in slide-in-from-bottom-4';
-          toast.innerHTML = `ข้อผิดพลาด: ${err.message}`;
-          document.body.appendChild(toast);
-          setTimeout(() => toast.remove(), 5000);
-        }
+        console.error('Generation failed:', err);
+        // Restore input back to inputs list on failure
+        setInputs(prev => {
+          if (prev.some(i => i.id === input.id)) return prev;
+          return [...prev, input];
+        });
+        
+        const toast = document.createElement('div');
+        toast.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-red-600 text-white rounded-xl px-4 py-3 text-sm font-medium shadow-2xl z-[9999]';
+        toast.innerHTML = `ข้อผิดพลาด: ${err.message}`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 5000);
       } finally {
-        isProcessingRef.current = false;
+        updateActiveWorkers(false, input.id);
         setGeneratingQueue(prev => prev.filter(a => a.id !== input.id));
       }
-    };
+    })();
+  }, [setGeneratedArticles, setGeneratingQueue, setInputs]);
 
-    processQueue();
-  }, [generatingQueue, language, tone, copywritingFramework, pov, lengthWords, audience, secondaryKeywords, coverToggle, inlineCount, aspectRatio, sitemaps, internalLinks]); // removed generatedArticles to prevent state update feedback loop
+  useEffect(() => {
+    const idleItems = generatingQueue.filter(item => !activeWorkersRef.current.has(item.id));
+    const slotsAvailable = Math.max(0, MAX_CONCURRENT_ARTICLES - activeWorkersRef.current.size);
+    const toStart = idleItems.slice(0, slotsAvailable);
+    toStart.forEach(item => processItem(item));
+  }, [generatingQueue, processItem]);
 
   const startGenerating = (input: ArticleItem) => {
     // Only queue if not already queued
@@ -1044,7 +1125,7 @@ export default function CampaignSetup() {
     
     // Toast notification
     const toast = document.createElement('div');
-    toast.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white rounded-full px-6 py-3 text-sm font-medium shadow-xl flex items-center gap-3 z-50 animate-in fade-in slide-in-from-bottom-4';
+    toast.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-white text-slate-900 rounded-full px-6 py-3 text-sm font-medium shadow-xl flex items-center gap-3 z-50 animate-in fade-in slide-in-from-bottom-4';
     toast.innerHTML = `<svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> เพิ่ม "${input.keyword}" เข้าคิวคิวการสร้างแล้ว`;
     document.body.appendChild(toast);
     setTimeout(() => {
@@ -1064,7 +1145,7 @@ export default function CampaignSetup() {
       setSelectedInputIds([]); // Clear selection after generating
       
       const toast = document.createElement('div');
-      toast.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white rounded-full px-6 py-3 text-sm font-medium shadow-xl flex items-center gap-3 z-50 animate-in fade-in slide-in-from-bottom-4';
+      toast.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-white text-slate-900 rounded-full px-6 py-3 text-sm font-medium shadow-xl flex items-center gap-3 z-50 animate-in fade-in slide-in-from-bottom-4';
       toast.innerHTML = `<svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> เพิ่ม ${newInputsToQueue.length} บทความเข้าคิวการสร้างแล้ว`;
       document.body.appendChild(toast);
       setTimeout(() => {
@@ -1093,157 +1174,110 @@ export default function CampaignSetup() {
   if(!user) return <div>Loading...</div>;
 
   return (
-    <div className="min-h-[100dvh] bg-[#fafafa] flex flex-col md:flex-row font-sans text-slate-900">
-      
-      {/* Mobile Topbar */}
-      <div className="md:hidden sticky top-0 left-0 right-0 h-16 bg-slate-900 border-b border-slate-800 z-50 flex items-center justify-between px-4 w-full">
-        <Link to="/dashboard" className="flex items-center gap-2 font-bold text-lg text-white">
-          <Sparkles className="w-5 h-5 text-purple-500" />
-          <span>z.ai<span className="text-purple-500 font-light ml-2">SEO Studio</span></span>
-        </Link>
-        <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-slate-300 hover:text-white">
-          {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </Button>
-      </div>
-
-      {/* Mobile Menu Overlay */}
-      {isMobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 top-16 bg-slate-900 z-40 flex flex-col items-center pt-8 space-y-6">
-          <nav className="flex flex-col items-center space-y-4 w-full px-6">
-            <Link to="/dashboard" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-center gap-3 w-full py-3 text-base font-medium rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition-colors">
-              <LayoutDashboard className="w-5 h-5" /> แดชบอร์ด
-            </Link>
-            <Link to="/campaign/new" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-center gap-3 w-full py-3 text-base font-medium rounded-xl text-white bg-slate-800 transition-colors">
-              <Plus className="w-5 h-5" /> สร้างแคมเปญใหม่
-            </Link>
-            <Link to="/articles" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-center gap-3 w-full py-3 text-base font-medium rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition-colors">
-              <FileText className="w-5 h-5" /> บทความทั้งหมด
-            </Link>
-            {isAdmin && (
-            <Link to="/admin?tab=users" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-center gap-3 w-full py-3 text-base font-medium rounded-xl text-purple-300 hover:text-white bg-purple-600/20 transition-colors">
-              <Users className="w-5 h-5" /> จัดการผู้ใช้
-            </Link>
-            )}
-            {isAdmin && (
-            <Link to="/admin?tab=stats" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-center gap-3 w-full py-3 text-base font-medium rounded-xl text-purple-300 hover:text-white bg-purple-600/20 transition-colors">
-              <BarChart3 className="w-5 h-5" /> สถิติรวม
-            </Link>
-            )}
-          </nav>
-        </div>
-      )}
-
-      {/* Sidebar - Desktop */}
-      <aside className="w-64 bg-slate-900 text-slate-200 flex-shrink-0 hidden md:flex flex-col h-screen sticky top-0 z-20">
-        <div className="p-6">
-          <Link to="/dashboard" className="flex items-center gap-2 font-bold text-xl text-white mb-8">
-            <Sparkles className="w-6 h-6 text-purple-500" />
-            <span>z.ai<span className="text-purple-500 font-light ml-2">SEO Studio</span></span>
-          </Link>
-          
-          <nav className="space-y-1">
-            <Link to="/dashboard" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
-              <LayoutDashboard className="w-4 h-4" /> แดชบอร์ด
-            </Link>
-            <Link to="/campaign/new" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md text-white bg-slate-800 transition-colors">
-              <Plus className="w-4 h-4" /> สร้างแคมเปญใหม่
-            </Link>
-            <Link to="/articles" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
-              <FileText className="w-4 h-4" /> บทความทั้งหมด
-            </Link>
-            {isAdmin && (
-            <Link to="/admin?tab=users" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md text-purple-300 hover:text-white bg-purple-600/20 transition-colors">
-              <Users className="w-4 h-4" /> จัดการผู้ใช้
-            </Link>
-            )}
-            {isAdmin && (
-            <Link to="/admin?tab=stats" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md text-purple-300 hover:text-white bg-purple-600/20 transition-colors">
-              <BarChart3 className="w-4 h-4" /> สถิติรวม
-            </Link>
-            )}
-          </nav>
-        </div>
-        <div className="mt-auto p-4 border-t border-slate-800">
-          <div className="flex items-center gap-3 px-3 py-2 text-sm rounded-md hover:bg-slate-800 cursor-pointer">
-            <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center">
-              <User className="w-4 h-4" />
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <p className="text-sm font-medium text-white truncate">{user.email}</p>
-              <p className="text-xs text-slate-400 truncate">{isAdmin ? 'ผู้ดูแลระบบ (Admin)' : 'ผู้ใช้งาน'}</p>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main Content Area */}
-      <main className="flex-1 overflow-x-hidden flex flex-col bg-[#fafafa] relative">
-        {/* Scrollable Workspace */}
-        <div className="flex-1 p-4 sm:p-6 md:p-8 lg:p-12 overflow-y-auto">
-          <div className="max-w-5xl mx-auto w-full">
+    <AppLayout user={user}>
+      <div className="flex-1 w-full bg-[#f8fafc] overflow-hidden min-h-[calc(100vh-4rem)]">
+        
+        {/* Main Content Area */}
+        <main className="flex-1 overflow-auto p-4 sm:p-6 md:p-8 lg:p-10 relative z-10 h-full hide-scrollbar">
+          <div className="max-w-[1400px] mx-auto w-full space-y-6">
             
-            {/* Header Area */}
-            <div className="flex flex-col mb-6 md:mb-8 gap-4 border-b border-gray-200 pb-6">
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-1">
-                    <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 break-words line-clamp-2 md:line-clamp-none">แคมเปญอัตโนมัติ (Default Campaign)</h1>
-                    <Badge variant="secondary" className="font-normal text-xs bg-slate-100 text-slate-600 rounded-md whitespace-nowrap">Default</Badge>
+            {/* Header Bento Card */}
+            <div className="bg-white rounded-[2rem] p-8 sm:p-10 shadow-sm border border-slate-100/60 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative overflow-hidden group hover:shadow-md transition-all duration-500">
+                <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-emerald-100/40 to-teal-50/40 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 transition-transform duration-700 group-hover:scale-110"></div>
+                
+                <div className="relative z-10">
+                  <div className="flex flex-wrap items-center gap-4 mb-3">
+                    <div className="bg-emerald-50 p-2.5 rounded-2xl text-emerald-600 shadow-sm border border-emerald-100/50">
+                      <Sparkles className="w-6 h-6" />
+                    </div>
+                    <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">แคมเปญอัตโนมัติ</h1>
+                    <Badge variant="secondary" className="font-semibold text-xs bg-slate-100 text-slate-600 px-3 py-1.5 rounded-xl border border-slate-200/50 shadow-sm">Default Campaign</Badge>
                   </div>
-                  <p className="text-xs sm:text-sm text-slate-500">อัปเดตล่าสุดเมื่อ: วันนี้, 12:00 PM</p>
+                  <p className="text-[15px] text-slate-500 font-medium flex items-center gap-2.5">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                    </span>
+                    ระบบสแตนด์บายพร้อมทำงาน • อัปเดตล่าสุดเมื่อสักครู่
+                  </p>
                 </div>
-                <div className="flex flex-wrap w-full md:w-auto gap-2">
-                  <Button variant="outline" size="sm" className="h-9 gap-2 shadow-sm rounded-md border-slate-200 text-slate-700 flex-1 md:flex-none justify-center">
-                    <FileText className="w-4 h-4" /> คู่มือการใช้งาน
+                
+                <div className="flex flex-wrap w-full md:w-auto gap-3 relative z-10">
+                  <Button variant="outline" className="h-12 rounded-2xl bg-white/80 backdrop-blur-md border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-sm transition-all font-semibold px-5">
+                    <FileText className="w-4 h-4 mr-2 text-slate-400" /> คู่มือการใช้งาน
                   </Button>
-                  <Button variant="outline" size="sm" className="h-9 gap-2 shadow-sm rounded-md border-slate-200 text-slate-700 flex-1 md:flex-none justify-center">
-                    <PlaySquare className="w-4 h-4" /> ดูวิดีโอสอน
+                  <Button variant="outline" className="h-12 rounded-2xl bg-white/80 backdrop-blur-md border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-sm transition-all font-semibold px-5">
+                    <PlaySquare className="w-4 h-4 mr-2 text-slate-400" /> วิดีโอสอน
                   </Button>
+                </div>
+            </div>
+
+            {/* Action Area Bento */}
+            <div className="mb-6 flex flex-col md:flex-row items-center justify-between bg-white rounded-[2rem] p-6 shadow-sm border border-slate-100/60 relative overflow-hidden group hover:shadow-md transition-all">
+              <div className="absolute -left-12 -top-12 w-40 h-40 bg-emerald-50 rounded-full blur-3xl opacity-50 group-hover:scale-125 transition-transform duration-700"></div>
+              <div className="flex items-center gap-5 relative z-10 w-full md:w-auto mb-4 md:mb-0">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-100 to-teal-50 flex items-center justify-center flex-shrink-0 border border-emerald-100 shadow-inner">
+                  <Search className="w-6 h-6 text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-lg">คีย์เวิร์ดตั้งต้น</h3>
+                  <p className="text-sm text-slate-500 font-medium">เพิ่มคีย์เวิร์ดเป้าหมายเพื่อสร้างบทความ SEO</p>
                 </div>
               </div>
-            </div>
-
-            {/* Action Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
               <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
-                <DialogTrigger className="text-left rounded-2xl bg-white hover:border-purple-300 hover:bg-purple-50/50 hover:-translate-y-1 hover:shadow-md cursor-pointer transition-all shadow-[0px_4px_20px_rgba(0,0,0,0.03)] border border-slate-100 flex flex-col justify-center p-6 outline-none focus-visible:ring-2 focus-visible:ring-purple-500">
-                  <Search className="w-8 h-8 text-purple-500 mb-4 bg-purple-50 p-1.5 rounded-lg" />
-                  <span className="font-semibold text-slate-800 text-[15px]">เพิ่มบทความ SEO</span>
-                  <span className="text-sm text-slate-500 mt-1">ใส่คีย์เวิร์ดตั้งต้นสำหรับบทความ</span>
+                <DialogTrigger className="w-full md:w-auto bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-full shadow-[0_10px_40px_-10px_rgba(16,185,129,0.5)] px-8 h-14 font-bold flex items-center justify-center gap-2 relative z-10 hover:-translate-y-1 hover:scale-105 transition-all duration-300">
+                  <Plus className="w-6 h-6" /> เพิ่มคีย์เวิร์ดเป้าหมาย
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-[600px] gap-0 !p-0 overflow-hidden bg-white border-none rounded-2xl shadow-xl">
-                  <DialogHeader className="px-6 py-5 border-b border-slate-100 flex flex-row items-center justify-between bg-white">
-                    <DialogTitle className="text-xl font-semibold text-slate-800 tracking-tight">เพิ่มคีย์เวิร์ด SEO</DialogTitle>
-                  </DialogHeader>
+                <DialogContent className="sm:max-w-[700px] gap-0 !p-0 overflow-hidden bg-white/70 backdrop-blur-3xl border border-white shadow-[0_40px_100px_-20px_rgba(0,0,0,0.2)] rounded-[2.5rem]">
                   
-                  <Tabs defaultValue="manual" className="w-full bg-white">
-                    <div className="px-6 pt-4 border-b border-slate-100">
-                      <TabsList className="bg-transparent h-auto p-0 gap-6">
-                        <TabsTrigger value="manual" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-purple-600 data-[state=active]:shadow-none rounded-none py-2 px-1 font-medium text-slate-600 data-[state=active]:text-purple-700">กรอกเอง (Manual)</TabsTrigger>
-                        <TabsTrigger value="import" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-purple-600 data-[state=active]:shadow-none rounded-none py-2 px-1 font-medium text-slate-600 data-[state=active]:text-purple-700">นำเข้า (Import)</TabsTrigger>
+                  <div className="p-10 pb-6 relative overflow-hidden">
+                    {/* Decorative glow */}
+                    <div className="absolute -top-24 -right-24 w-48 h-48 bg-emerald-400/20 rounded-full blur-3xl pointer-events-none"></div>
+                    <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-teal-400/20 rounded-full blur-3xl pointer-events-none"></div>
+                    
+                    <div className="relative z-10">
+                      <h2 className="text-4xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-br from-slate-900 to-slate-500 mb-2">เพิ่มคีย์เวิร์ด SEO</h2>
+                      <p className="text-base font-medium text-slate-500">พิมพ์คีย์เวิร์ดที่คุณต้องการ หรืออัปโหลดไฟล์เพื่อให้ระบบจัดการให้</p>
+                    </div>
+                  </div>
+                  
+                  <Tabs defaultValue="manual" className="w-full flex flex-col relative z-10">
+                    <div className="px-10 pb-2">
+                      <TabsList className="bg-slate-900/5 p-1.5 gap-2 rounded-[1.25rem] inline-flex w-full sm:w-auto shadow-inner">
+                        <TabsTrigger value="manual" className="flex-1 sm:flex-none data-[state=active]:bg-white data-[state=active]:shadow-md rounded-xl py-3 px-8 font-bold text-slate-500 data-[state=active]:text-slate-900 transition-all duration-300">
+                          กรอกเอง
+                        </TabsTrigger>
+                        <TabsTrigger value="import" className="flex-1 sm:flex-none data-[state=active]:bg-white data-[state=active]:shadow-md rounded-xl py-3 px-8 font-bold text-slate-500 data-[state=active]:text-slate-900 transition-all duration-300">
+                          อัปโหลดไฟล์
+                        </TabsTrigger>
                       </TabsList>
                     </div>
                     
-                    <TabsContent value="manual" className="p-6 m-0 border-none outline-none max-h-[60vh] overflow-y-auto">
-                      <div className="space-y-4">
+                    <TabsContent value="manual" className="p-10 pt-4 m-0 border-none outline-none max-h-[50vh] overflow-y-auto hide-scrollbar">
+                      <div className="space-y-5">
                         {pendingInputs.map((item, index) => (
-                          <div key={item.id} className="flex gap-3 items-center">
-                            <Input 
-                              placeholder="ระบุคีย์เวิร์ด SEO..." 
-                              value={item.keyword}
-                              onChange={(e) => handleFieldChange(item.id, 'keyword', e.target.value)}
-                              className="flex-1 h-11 rounded-lg border-slate-200 focus-visible:ring-purple-500 shadow-sm"
-                            />
-                            <Input 
-                              placeholder="ระบุหัวข้อ (ไม่บังคับ)" 
-                              value={item.title}
-                              onChange={(e) => handleFieldChange(item.id, 'title', e.target.value)}
-                              className="flex-1 h-11 rounded-lg border-slate-200 focus-visible:ring-purple-500 shadow-sm"
-                            />
+                          <div key={item.id} className="flex gap-4 items-center group relative bg-white/50 hover:bg-white rounded-[1.5rem] p-2 pr-4 transition-all duration-300 shadow-sm border border-white hover:shadow-md">
+                            <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 ml-2 shadow-inner">
+                              <span className="text-emerald-700 font-bold text-sm">{index + 1}</span>
+                            </div>
+                            <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <Input 
+                                placeholder="คีย์เวิร์ดหลัก..." 
+                                value={item.keyword}
+                                onChange={(e) => handleFieldChange(item.id, 'keyword', e.target.value)}
+                                className="h-14 rounded-2xl bg-transparent border-0 focus-visible:ring-0 shadow-none font-bold text-lg text-slate-900 placeholder:text-slate-300 px-2"
+                              />
+                              <Input 
+                                placeholder="หัวข้อบทความ (ไม่บังคับ)..." 
+                                value={item.title}
+                                onChange={(e) => handleFieldChange(item.id, 'title', e.target.value)}
+                                className="h-14 rounded-2xl bg-transparent border-0 focus-visible:ring-0 shadow-none font-medium text-slate-500 placeholder:text-slate-300 px-2"
+                              />
+                            </div>
                             <Button 
                               variant="ghost" 
                               size="icon" 
-                              className="h-11 w-11 text-slate-400 hover:text-red-500 hover:bg-red-50" 
+                              className="h-12 w-12 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-2xl transition-all shrink-0 opacity-0 group-hover:opacity-100" 
                               disabled={pendingInputs.length === 1}
                               onClick={() => handleRemoveField(item.id)}
                             >
@@ -1255,780 +1289,605 @@ export default function CampaignSetup() {
                         <Button 
                           variant="ghost" 
                           onClick={handleAddField}
-                          className="text-purple-600 hover:text-purple-700 hover:bg-purple-50 p-2 h-auto justify-start font-medium text-sm rounded-lg"
+                          className="w-full text-emerald-600 bg-emerald-50/50 hover:bg-emerald-100 hover:text-emerald-700 h-16 font-extrabold rounded-[1.5rem] mt-4 transition-all border border-emerald-100 border-dashed"
                         >
-                          <Plus className="w-4 h-4 mr-1" /> เพิ่มฟิลด์ใหม่
+                          <Plus className="w-6 h-6 mr-2" /> เพิ่มช่องคีย์เวิร์ด
                         </Button>
                       </div>
                     </TabsContent>
-                    <TabsContent value="import" className="p-6 m-0">
-                      <p className="text-sm text-slate-500">อัปโหลดไฟล์ CSV เพื่อนำเข้าข้อมูล (Coming soon)</p>
+                    <TabsContent value="import" className="p-10 pt-4 m-0">
+                      <div className="flex flex-col items-center justify-center py-16 text-slate-500 border-2 border-dashed border-slate-200 rounded-[2rem] bg-white/40 hover:bg-white/80 hover:border-emerald-300 hover:shadow-lg hover:shadow-emerald-500/10 transition-all cursor-pointer group">
+                        <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-lg shadow-slate-200/50 mb-6 group-hover:scale-110 group-hover:bg-emerald-50 transition-all duration-300">
+                          <UploadCloud className="w-10 h-10 text-emerald-500 group-hover:animate-bounce" />
+                        </div>
+                        <h4 className="text-2xl font-black text-slate-900 mb-2">ลากไฟล์ CSV มาวางที่นี่</h4>
+                        <p className="text-base font-medium text-slate-500">หรือคลิกเพื่อเลือกไฟล์จากคอมพิวเตอร์ของคุณ</p>
+                      </div>
                     </TabsContent>
                   </Tabs>
 
-                  <DialogFooter className="px-6 py-4 m-0 border-t border-slate-100 bg-[#fafafa] flex sm:justify-end gap-3">
-                    <Button variant="ghost" onClick={() => setIsAddModalOpen(false)} className="rounded-lg font-medium hover:bg-slate-200/50 text-slate-600">ยกเลิก</Button>
-                    <Button onClick={handleAddKeyword} className="bg-purple-600 hover:bg-purple-700 text-white rounded-lg shadow-sm font-medium px-6">เพิ่มคีย์เวิร์ด</Button>
-                  </DialogFooter>
+                  <div className="px-10 py-6 m-0 border-t border-white/40 bg-white/60 backdrop-blur-xl flex justify-between items-center z-20 relative rounded-b-[2.5rem]">
+                    <span className="text-sm font-bold text-slate-400">Total: {pendingInputs.filter(p => p.keyword.trim() !== '').length} keywords</span>
+                    <div className="flex gap-4">
+                      <Button variant="ghost" onClick={() => setIsAddModalOpen(false)} className="rounded-2xl font-bold hover:bg-slate-200/50 text-slate-500 px-8 h-14">ยกเลิก</Button>
+                      <Button onClick={handleAddKeyword} className="bg-slate-900 hover:bg-slate-800 text-white rounded-2xl shadow-[0_10px_20px_-10px_rgba(0,0,0,0.5)] font-bold px-10 h-14 transition-all hover:scale-105">สร้างบทความเลย</Button>
+                    </div>
+                  </div>
                 </DialogContent>
               </Dialog>
-
-              <Card className="hover:border-blue-300 hover:bg-blue-50/50 hover:-translate-y-1 hover:shadow-md cursor-pointer transition-all shadow-[0px_4px_20px_rgba(0,0,0,0.03)] border border-slate-100 flex flex-col justify-center p-6 rounded-2xl">
-                <FileText className="w-8 h-8 text-blue-500 mb-4 bg-blue-50 p-1.5 rounded-lg" />
-                <span className="font-semibold text-slate-800 text-[15px]">เพิ่มบทความข่าว (News)</span>
-                <span className="text-sm text-slate-500 mt-1">บทความด่วนอิงจากข่าวล่าสุด</span>
-              </Card>
-
-              <Card className="hover:border-red-300 hover:bg-red-50/50 hover:-translate-y-1 hover:shadow-md cursor-pointer transition-all shadow-[0px_4px_20px_rgba(0,0,0,0.03)] border border-slate-100 flex flex-col justify-center p-6 rounded-2xl">
-                <Video className="w-8 h-8 text-red-500 mb-4 bg-red-50 p-1.5 rounded-lg" />
-                <span className="font-semibold text-slate-800 text-[15px]">แปลง YouTube เป็นบทความ</span>
-                <span className="text-sm text-slate-500 mt-1">สรุปเนื้อหาจากวิดีโอ YouTube</span>
-              </Card>
             </div>
 
             {/* Campaign Tabs */}
             <Tabs value={activeTab} onValueChange={(val) => {
-              if (val === 'settings' && !isAdmin) return;
               setActiveTab(val);
-            }} className="w-full">
-              <div className="border-b border-gray-200 mb-6 w-full overflow-x-auto overflow-y-hidden">
-                <TabsList className="bg-transparent h-auto p-0 flex space-x-6 min-w-max">
-                  <TabsTrigger value="inputs" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-purple-600 data-[state=active]:shadow-none rounded-none py-3 px-1 font-medium text-slate-600 data-[state=active]:text-purple-700 hover:text-purple-700 transition-colors">
-                    คีย์เวิร์ดนำเข้า <Badge className="ml-2 bg-slate-100 text-slate-700 hover:bg-slate-100 font-medium px-1.5 py-0 rounded-md border-0 shadow-none">{inputs.length}</Badge>
+            }} className="w-full space-y-6">
+              <div className="bg-white rounded-2xl p-1.5 shadow-sm border border-slate-100/60 inline-flex w-full md:w-auto overflow-x-auto hide-scrollbar">
+                <TabsList className="bg-transparent h-auto p-0 flex space-x-1 min-w-max">
+                  <TabsTrigger value="inputs" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700 rounded-xl py-2.5 px-4 font-semibold text-slate-500 hover:text-slate-800 transition-all data-[state=active]:shadow-sm">
+                    คีย์เวิร์ด <Badge className="ml-2 bg-emerald-100/50 text-emerald-700 font-bold px-1.5 py-0 rounded-md border-0">{inputs.length}</Badge>
                   </TabsTrigger>
-                  <TabsTrigger value="generations" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-purple-600 data-[state=active]:shadow-none rounded-none py-3 px-1 font-medium text-slate-600 data-[state=active]:text-purple-700 hover:text-purple-700 transition-colors">
-                    ประวัติการสร้าง <Badge className="ml-2 bg-purple-100 text-purple-700 hover:bg-purple-100 font-medium px-1.5 py-0 rounded-md border-0 shadow-none">{generatedArticles.length + generatingQueue.length}</Badge>
+                  <TabsTrigger value="generations" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700 rounded-xl py-2.5 px-4 font-semibold text-slate-500 hover:text-slate-800 transition-all data-[state=active]:shadow-sm">
+                    ประวัติสร้าง <Badge className="ml-2 bg-emerald-100/50 text-emerald-700 font-bold px-1.5 py-0 rounded-md border-0">{generatedArticles.length + generatingQueue.length}</Badge>
                   </TabsTrigger>
-                  <TabsTrigger value="publications" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-purple-600 data-[state=active]:shadow-none rounded-none py-3 px-1 font-medium text-slate-600 data-[state=active]:text-purple-700 hover:text-purple-700 transition-colors">
-                    การเผยแพร่ <Badge className="ml-2 bg-slate-100 text-slate-700 hover:bg-slate-100 font-medium px-1.5 py-0 rounded-md border-0 shadow-none">0</Badge>
+                  <TabsTrigger value="publications" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700 rounded-xl py-2.5 px-4 font-semibold text-slate-500 hover:text-slate-800 transition-all data-[state=active]:shadow-sm">
+                    เผยแพร่ <Badge className="ml-2 bg-slate-100 text-slate-600 font-bold px-1.5 py-0 rounded-md border-0">0</Badge>
                   </TabsTrigger>
-                  <TabsTrigger value="configuration" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-purple-600 data-[state=active]:shadow-none rounded-none py-3 px-1 font-medium text-slate-600 data-[state=active]:text-purple-700 hover:text-purple-700 transition-colors">
-                    ตั้งค่าแคมเปญ
+                  <TabsTrigger value="configuration" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700 rounded-xl py-2.5 px-4 font-semibold text-slate-500 hover:text-slate-800 transition-all data-[state=active]:shadow-sm">
+                    การตั้งค่า
                   </TabsTrigger>
-                  <TabsTrigger value="templates" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-purple-600 data-[state=active]:shadow-none rounded-none py-3 px-1 font-medium text-slate-600 data-[state=active]:text-purple-700 hover:text-purple-700 transition-colors">
-                    เทมเพลตบทความ
-                  </TabsTrigger>
-                  {isAdmin && (
-                  <TabsTrigger value="settings" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-purple-600 data-[state=active]:shadow-none rounded-none py-3 px-1 font-medium text-slate-600 data-[state=active]:text-purple-700 hover:text-purple-700 transition-colors">
-                    เชื่อมต่อระบบ
-                  </TabsTrigger>
-                  )}
                 </TabsList>
               </div>
 
               {/* Tab: Inputs */}
               <TabsContent value="inputs" className="outline-none">
                 {selectedInputIds.length > 0 && (
-                  <div className="bg-purple-50 border border-purple-100 rounded-xl p-3 mb-4 flex items-center justify-between animate-in fade-in slide-in-from-top-2">
-                    <span className="text-purple-700 font-medium text-sm ml-2">เลือกแล้ว {selectedInputIds.length} รายการ</span>
+                  <div className="bg-emerald-50 border border-emerald-900/50 rounded-xl p-3 mb-4 flex items-center justify-between animate-in fade-in slide-in-from-top-2">
+                    <span className="text-emerald-700 font-medium text-sm ml-2">เลือกแล้ว {selectedInputIds.length} รายการ</span>
                     <Button 
                       onClick={generateSelectedInputs}
-                      className="bg-purple-600 hover:bg-purple-700 text-white font-medium shadow-sm transition-all text-sm h-9 px-4 rounded-lg"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-slate-900 font-medium shadow-lg shadow-slate-200/50 transition-all text-sm h-9 px-4 rounded-lg"
                     >
                       <Sparkles className="w-4 h-4 mr-2" />
                       สร้างบทความที่เลือก
                     </Button>
                   </div>
                 )}
-                <div className="bg-white border text-sm border-slate-100 rounded-2xl shadow-[0px_4px_16px_rgba(0,0,0,0.02)] overflow-hidden">
-                  <Table>
-                    <TableHeader className="bg-slate-50/80">
-                      <TableRow className="border-b border-slate-200 hover:bg-transparent">
-                        <TableHead className="w-12 text-center py-3">
-                          <Checkbox 
-                            checked={inputs.length > 0 && selectedInputIds.length === inputs.length}
-                            onCheckedChange={(checked) => {
-                              setSelectedInputIds(checked ? inputs.map(i => i.id) : []);
-                            }}
-                            className="border-slate-300 rounded-[4px] data-[state=checked]:bg-purple-600 data-[state=checked]:border-purple-600" 
-                          />
-                        </TableHead>
-                        <TableHead className="font-medium text-slate-500 py-3 w-16"><div className="flex items-center gap-1.5"><LayoutDashboard className="w-3.5 h-3.5"/> ลำดับ</div></TableHead>
-                        <TableHead className="font-medium text-slate-500 py-3"><div className="flex items-center gap-1.5"><SearchCode className="w-3.5 h-3.5"/> คีย์เวิร์ด (Input)</div></TableHead>
-                        <TableHead className="font-medium text-slate-500 py-3 w-32">ภาษา</TableHead>
-                        <TableHead className="text-right py-3 w-48"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {inputs.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={5} className="h-72 text-center hover:bg-transparent">
-                            <div className="flex flex-col items-center justify-center text-slate-500 space-y-4">
-                              <div className="w-16 h-16 rounded-full bg-purple-50 flex items-center justify-center shadow-sm">
-                                <SearchCode className="w-8 h-8 text-purple-500" />
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {inputs.length === 0 ? (
+                    <div className="col-span-full bg-white text-sm rounded-[2rem] border border-slate-100 shadow-sm p-12 flex flex-col items-center justify-center min-h-[400px]">
+                      <div className="flex flex-col items-center justify-center text-slate-500 space-y-6">
+                        <div className="w-24 h-24 rounded-3xl bg-emerald-50 flex items-center justify-center relative overflow-hidden group">
+                          <div className="absolute inset-0 bg-gradient-to-tr from-emerald-100 to-teal-50 opacity-50"></div>
+                          <SearchCode className="w-12 h-12 text-emerald-500 relative z-10" />
+                        </div>
+                        <div className="space-y-2 text-center">
+                          <h3 className="text-xl font-bold text-slate-900">ยังไม่มีข้อมูลคีย์เวิร์ด</h3>
+                          <p className="text-slate-500 max-w-sm mx-auto leading-relaxed font-medium">เพิ่มคีย์เวิร์ดตั้งต้นเพื่อเริ่มต้นสร้างบทความ SEO ที่สมบูรณ์แบบได้ทันที</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    inputs.map((input, index) => {
+                      const isSelected = selectedInputIds.includes(input.id);
+                      return (
+                        <div 
+                          key={input.id} 
+                          className={`group bg-white rounded-3xl p-6 border ${isSelected ? 'border-emerald-500 shadow-lg shadow-emerald-500/10' : 'border-slate-100 shadow-sm hover:shadow-md'} transition-all relative overflow-hidden flex flex-col h-[280px]`}
+                        >
+                          <div className="flex justify-between items-start mb-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-xs font-bold text-slate-500">
+                                {index + 1}
                               </div>
-                              <div className="space-y-1">
-                                <h3 className="font-semibold text-slate-800">ยังไม่มีข้อมูลเริ่มต้น</h3>
-                                <p className="text-sm text-slate-500 max-w-sm mx-auto">คลิกการ์ด "เพิ่มบทความ SEO" ด้านบนเพื่อระบุเป้าหมายคีย์เวิร์ดสำหรับสร้างเนื้อหา</p>
-                              </div>
+                              <Badge variant="secondary" className="font-medium bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-lg border-0">
+                                {(() => {
+                                  const activeLang = input.overrides?.language || language;
+                                  return activeLang === 'thai' ? 'TH' : 'EN';
+                                })()}
+                              </Badge>
                             </div>
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        inputs.map((input, index) => (
-                          <TableRow key={input.id} className="group border-b border-slate-100 hover:bg-slate-50/50">
-                            <TableCell className="text-center py-4">
-                              <Checkbox 
-                                checked={selectedInputIds.includes(input.id)}
-                                onCheckedChange={(checked) => {
-                                  setSelectedInputIds(prev => 
-                                    checked ? [...prev, input.id] : prev.filter(id => id !== input.id)
-                                  );
-                                }}
-                                className="border-slate-300 rounded-[4px] data-[state=checked]:bg-purple-600 data-[state=checked]:border-purple-600" 
-                              />
-                            </TableCell>
-                            <TableCell className="text-slate-500 py-4">{index + 1}</TableCell>
-                            <TableCell className="font-medium text-slate-800 py-4 flex items-center gap-2">
-                              <Search className="w-4 h-4 text-purple-500" />
+                            <Checkbox 
+                              checked={isSelected}
+                              onCheckedChange={(checked) => {
+                                setSelectedInputIds(prev => 
+                                  checked ? [...prev, input.id] : prev.filter(id => id !== input.id)
+                                );
+                              }}
+                              className="border-slate-200 rounded-lg w-6 h-6 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600 shadow-sm" 
+                            />
+                          </div>
+
+                          <div className="mb-auto">
+                            <h4 className="text-xl font-bold text-slate-900 mb-2 line-clamp-2 leading-tight">
                               {input.keyword}
-                              {input.title && <span className="text-xs font-normal text-slate-400 font-mono bg-slate-100 px-1.5 py-0.5 rounded ml-2 hidden sm:inline-block">({input.title})</span>}
-                            </TableCell>
-                            <TableCell className="text-slate-600 py-4">
-                              {(() => {
-                                const activeLang = input.overrides?.language || language;
-                                return activeLang === 'thai' ? 'ภาษาไทย (Thai)' : 'English (US)';
-                              })()}
-                            </TableCell>
-                            <TableCell className="text-right py-4">
-                              <div className="flex flex-col sm:flex-row items-end sm:items-center justify-end gap-2 sm:gap-3 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
-                                  className="h-8 text-purple-600 hover:text-purple-700 hover:bg-purple-50 font-medium disabled:opacity-50"
-                                  onClick={() => startGenerating(input)}
-                                  disabled={generatingQueue.some(i => i.id === input.id)}
-                                >
-                                  {generatingQueue.some(i => i.id === input.id) ? (
-                                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                                  ) : (
-                                    <PlaySquare className="w-3.5 h-3.5 mr-1.5" />
-                                  )}
-                                  {generatingQueue.some(i => i.id === input.id) ? 'อยู่ในคิว...' : 'สร้างบทความ'}
-                                </Button>
-                                <div className="flex gap-1">
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-slate-700" onClick={() => setEditingItem(input)}>
-                                    <Edit3 className="w-4 h-4" />
-                                  </Button>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-500" onClick={() => removeInput(input.id)}>
-                                    <Trash2 className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
+                            </h4>
+                            {input.title && (
+                              <p className="text-sm font-medium text-slate-500 line-clamp-2">
+                                {input.title}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3 mt-4">
+                            <Button 
+                              variant="ghost" 
+                              className={`flex-1 h-11 font-bold rounded-xl transition-all ${generatingQueue.some(i => i.id === input.id) ? 'bg-slate-50 text-slate-500' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800'}`}
+                              onClick={() => startGenerating(input)}
+                              disabled={generatingQueue.some(i => i.id === input.id)}
+                            >
+                              {generatingQueue.some(i => i.id === input.id) ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                  อยู่ในคิว...
+                                </>
+                              ) : (
+                                <>
+                                  <PlaySquare className="w-4 h-4 mr-2" />
+                                  สร้างบทความ
+                                </>
+                              )}
+                            </Button>
+                            
+                            <div className="flex gap-2">
+                              <Button variant="outline" size="icon" className="h-11 w-11 rounded-xl border-slate-200 text-slate-500 hover:text-slate-900 shadow-sm" onClick={() => setEditingItem(input)}>
+                                <Edit3 className="w-4 h-4" />
+                              </Button>
+                              <Button variant="outline" size="icon" className="h-11 w-11 rounded-xl border-slate-200 text-slate-500 hover:text-red-600 hover:border-red-200 hover:bg-red-50 shadow-sm transition-colors" onClick={() => removeInput(input.id)}>
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </TabsContent>
 
               {/* Tab: Configuration (Bento Grid) */}
-              <TabsContent value="configuration" className="outline-none pt-2">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                  <Card className="md:col-span-2 flex flex-col p-2">
-                    <CardHeader className="pb-4">
-                      <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-                        <Settings2 className="w-4 h-4 text-slate-400" /> การตั้งค่าเป้าหมาย
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="space-y-2">
-                        <Label className="font-medium text-[0.85rem] text-slate-800">คีย์เวิร์ดรอง (Secondary Keywords)</Label>
-                        <TagInput 
-                          tags={secondaryKeywords} 
-                          setTags={setSecondaryKeywords} 
-                          placeholder="พิมพ์แล้วกด Enter..." 
-                        />
+              {/* Tab: Configuration (Spatial Layout) */}
+              <TabsContent value="configuration" className="outline-none pt-4">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  {/* Left Column - Main Settings */}
+                  <div className="lg:col-span-2 space-y-8">
+                    {/* Block 1: Target Settings */}
+                    <div className="bg-white/60 backdrop-blur-2xl border border-white/80 shadow-[0_8px_32px_rgba(0,0,0,0.04)] rounded-[2.5rem] p-8 lg:p-10 relative overflow-hidden group">
+                      <div className="absolute -right-20 -top-20 w-64 h-64 bg-emerald-400/10 rounded-full blur-3xl group-hover:bg-emerald-400/20 transition-all duration-700 pointer-events-none"></div>
+                      <h3 className="text-xl font-black tracking-tight text-slate-900 mb-8 flex items-center gap-3">
+                        <div className="bg-emerald-100/50 p-2.5 rounded-2xl text-emerald-600">
+                          <Settings2 className="w-5 h-5" />
+                        </div>
+                        การตั้งค่าเป้าหมาย
+                      </h3>
+                      
+                      <div className="space-y-8">
+                        <div className="space-y-3">
+                          <Label className="text-lg font-black tracking-tight text-slate-900">คีย์เวิร์ดรอง (Secondary Keywords)</Label>
+                          <div className="bg-white/80 rounded-[1.5rem] shadow-[inset_0_2px_10px_rgba(0,0,0,0.02)] p-2">
+                            <TagInput 
+                              tags={secondaryKeywords} 
+                              setTags={setSecondaryKeywords} 
+                              placeholder="พิมพ์แล้วกด Enter..." 
+                            />
+                          </div>
+                          <p className="text-sm font-medium text-slate-400 ml-2">คำที่ต้องการเน้นรองลงมา เพื่อเพิ่มโอกาสในการติดหน้าแรก</p>
+                        </div>
+                        <div className="space-y-3">
+                          <Label htmlFor="audience" className="text-lg font-black tracking-tight text-slate-900">กลุ่มเป้าหมาย (Target Audience)</Label>
+                          <Input 
+                            id="audience" 
+                            placeholder="เช่น คนที่ค้นหาข้อมูลสินค้าในอินเทอร์เน็ต" 
+                            value={audience}
+                            onChange={(e) => setAudience(e.target.value)}
+                            className="text-lg h-16 px-6 rounded-[1.5rem] bg-white/80 border-0 focus-visible:ring-4 focus-visible:ring-emerald-500/20 transition-all shadow-[inset_0_2px_10px_rgba(0,0,0,0.02)] font-medium text-slate-800 placeholder:text-slate-300"
+                          />
+                        </div>
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="audience" className="font-medium text-[0.85rem] text-slate-800">กลุ่มเป้าหมาย</Label>
-                        <Input 
-                          id="audience" 
-                          placeholder="เช่น คนที่ค้นหาข้อมูลสินค้าในอินเทอร์เน็ต" 
-                          value={audience}
-                          onChange={(e) => setAudience(e.target.value)}
-                          className="bg-white border-slate-200 rounded-lg focus-visible:ring-purple-500"
-                        />
-                      </div>
-                    </CardContent>
-                  </Card>
+                    </div>
 
-                  <Card className="md:col-span-1 flex flex-col p-2">
-                    <CardHeader className="pb-4">
-                      <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-                        <Feather className="w-4 h-4 text-slate-400" /> กฎเกณฑ์เนื้อหา
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="space-y-4">
+                    {/* Block 2: Internal Linking & Sitemaps */}
+                    <div className="bg-white/60 backdrop-blur-2xl border border-white/80 shadow-[0_8px_32px_rgba(0,0,0,0.04)] rounded-[2.5rem] p-8 lg:p-10 relative overflow-hidden group">
+                      <div className="absolute -left-20 -bottom-20 w-64 h-64 bg-teal-400/10 rounded-full blur-3xl group-hover:bg-teal-400/20 transition-all duration-700 pointer-events-none"></div>
+                      <h3 className="text-xl font-black tracking-tight text-slate-900 mb-8 flex items-center gap-3">
+                        <div className="bg-teal-100/50 p-2.5 rounded-2xl text-teal-600">
+                          <LinkIcon className="w-5 h-5" />
+                        </div>
+                        ลิงก์ภายในและ Sitemap (Internal Linking)
+                      </h3>
+                      
+                      <div className="space-y-8">
+                        <div className="space-y-3">
+                          <Label className="text-lg font-black tracking-tight text-slate-900">Reference URLs</Label>
+                          <Textarea 
+                            placeholder="https://...&#10;https://..." 
+                            value={internalLinks}
+                            onChange={(e) => setInternalLinks(e.target.value)}
+                            className="min-h-[120px] p-6 text-base rounded-[1.5rem] bg-white/80 border-0 focus-visible:ring-4 focus-visible:ring-emerald-500/20 transition-all shadow-[inset_0_2px_10px_rgba(0,0,0,0.02)] font-medium text-slate-800 placeholder:text-slate-300 resize-none font-mono leading-relaxed"
+                          />
+                          <p className="text-sm font-medium text-slate-400 ml-2">ใส่ลิงก์ของคุณเพื่อให้ AI แทรกเข้าบทความอัตโนมัติ</p>
+                        </div>
+
+                        <div className="space-y-3">
+                          <Label className="text-lg font-black tracking-tight text-slate-900 flex items-center gap-2">
+                            Sitemaps <span className="text-emerald-500 font-bold bg-emerald-50 px-2 py-0.5 rounded-lg text-xs uppercase tracking-widest">Optional</span>
+                          </Label>
+                          <div className="bg-white/80 rounded-[1.5rem] shadow-[inset_0_2px_10px_rgba(0,0,0,0.02)] p-2">
+                            <InlineTagInput 
+                              tags={sitemaps} 
+                              setTags={setSitemaps} 
+                              placeholder="https://example.com/sitemap.xml" 
+                              buttonText="Add Sitemap"
+                            />
+                          </div>
+                          <p className="text-sm font-medium text-slate-400 ml-2">เพิ่ม Sitemap เพื่อให้ AI ค้นหาลิงก์ภายในได้ครอบคลุมมากขึ้น</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column - Rules & Settings */}
+                  <div className="space-y-8">
+                    <div className="bg-white/60 backdrop-blur-2xl border border-white/80 shadow-[0_8px_32px_rgba(0,0,0,0.04)] rounded-[2.5rem] p-8 relative overflow-hidden group">
+                      <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-sky-400/10 rounded-full blur-2xl group-hover:bg-sky-400/20 transition-all duration-700 pointer-events-none"></div>
+                      <h3 className="text-xl font-black tracking-tight text-slate-900 mb-8 flex items-center gap-3">
+                        <div className="bg-sky-100/50 p-2.5 rounded-2xl text-sky-600">
+                          <Feather className="w-5 h-5" />
+                        </div>
+                        กฎเกณฑ์เนื้อหา
+                      </h3>
+                      
+                      <div className="space-y-6">
                         <div className="space-y-2">
-                          <Label className="font-medium text-[0.85rem] text-slate-800">น้ำเสียง (Tone)</Label>
+                          <Label className="text-base font-bold text-slate-700 ml-2">น้ำเสียง (Tone)</Label>
                           <Select value={tone} onValueChange={setTone}>
-                            <SelectTrigger className="border-slate-200 rounded-lg focus:ring-purple-500">
+                            <SelectTrigger className="h-14 px-5 rounded-[1.25rem] text-base bg-white/80 border-0 hover:bg-white transition-all shadow-[inset_0_2px_10px_rgba(0,0,0,0.02)] focus:ring-4 focus:ring-emerald-500/20 font-medium text-slate-800">
                               <SelectValue placeholder="เลือกสไตล์" />
                             </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="professional">เป็นทางการ (Professional)</SelectItem>
-                              <SelectItem value="conversational">เป็นกันเอง (Conversational)</SelectItem>
-                              <SelectItem value="persuasive">เพื่อการขาย (Persuasive)</SelectItem>
+                            <SelectContent className="rounded-2xl border border-slate-100 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] p-2">
+                              <SelectItem value="professional" className="rounded-xl py-2.5 cursor-pointer">เป็นทางการ (Professional)</SelectItem>
+                              <SelectItem value="conversational" className="rounded-xl py-2.5 cursor-pointer">เป็นกันเอง (Conversational)</SelectItem>
+                              <SelectItem value="persuasive" className="rounded-xl py-2.5 cursor-pointer">เพื่อการขาย (Persuasive)</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
+                        
                         <div className="space-y-2">
-                          <Label className="font-medium text-[0.85rem] text-slate-800">โครงสร้างบทความ (Copywriting Framework)</Label>
+                          <Label className="text-base font-bold text-slate-700 ml-2">โครงสร้างบทความ (Framework)</Label>
                           <Select value={copywritingFramework || 'standard'} onValueChange={(val) => setCopywritingFramework(val === 'standard' ? '' : val)}>
-                            <SelectTrigger className="border-slate-200 rounded-lg focus:ring-purple-500">
+                            <SelectTrigger className="h-14 px-5 rounded-[1.25rem] text-base bg-white/80 border-0 hover:bg-white transition-all shadow-[inset_0_2px_10px_rgba(0,0,0,0.02)] focus:ring-4 focus:ring-emerald-500/20 font-medium text-slate-800">
                               <SelectValue placeholder="ปกติ (มาตรฐาน SEO)" />
                             </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="auto">✨ Auto (AI วิเคราะห์โครงสร้างอัตโนมัติ)</SelectItem>
-                              <SelectItem value="standard">ปกติ (มาตรฐาน SEO)</SelectItem>
-                              <SelectItem value="AIDA">AIDA (Attention, Interest, Desire, Action)</SelectItem>
-                              <SelectItem value="PAS">PAS (Problem, Agitate, Solve)</SelectItem>
+                            <SelectContent className="rounded-2xl border border-slate-100 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] p-2">
+                              <SelectItem value="auto" className="rounded-xl py-2.5 cursor-pointer text-emerald-700 font-bold bg-emerald-50/50 mb-1">✨ Auto AI โครงสร้างอัตโนมัติ</SelectItem>
+                              <SelectItem value="standard" className="rounded-xl py-2.5 cursor-pointer">ปกติ (มาตรฐาน SEO)</SelectItem>
+                              <SelectItem value="AIDA" className="rounded-xl py-2.5 cursor-pointer">AIDA (Attention, Interest...)</SelectItem>
+                              <SelectItem value="PAS" className="rounded-xl py-2.5 cursor-pointer">PAS (Problem, Agitate, Solve)</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
+                        
                         <div className="space-y-2">
-                          <Label className="font-medium text-[0.85rem] text-slate-800">มุมมอง (POV)</Label>
+                          <Label className="text-base font-bold text-slate-700 ml-2">มุมมอง (POV)</Label>
                           <Select value={pov} onValueChange={setPov}>
-                            <SelectTrigger className="border-slate-200 rounded-lg focus:ring-purple-500">
+                            <SelectTrigger className="h-14 px-5 rounded-[1.25rem] text-base bg-white/80 border-0 hover:bg-white transition-all shadow-[inset_0_2px_10px_rgba(0,0,0,0.02)] focus:ring-4 focus:ring-emerald-500/20 font-medium text-slate-800">
                               <SelectValue placeholder="เลือกมุมมอง" />
                             </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="first">บุรุษที่ 1</SelectItem>
-                              <SelectItem value="third">บุรุษที่ 3</SelectItem>
+                            <SelectContent className="rounded-2xl border border-slate-100 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] p-2">
+                              <SelectItem value="first" className="rounded-xl py-2.5 cursor-pointer">บุรุษที่ 1</SelectItem>
+                              <SelectItem value="third" className="rounded-xl py-2.5 cursor-pointer">บุรุษที่ 3</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
+                        
                         <div className="space-y-2">
-                          <Label className="font-medium text-[0.85rem] text-slate-800">ภาษา</Label>
+                          <Label className="text-base font-bold text-slate-700 ml-2">ภาษา (Language)</Label>
                           <Select value={language} onValueChange={setLanguage}>
-                            <SelectTrigger className="border-slate-200 rounded-lg focus:ring-purple-500">
+                            <SelectTrigger className="h-14 px-5 rounded-[1.25rem] text-base bg-white/80 border-0 hover:bg-white transition-all shadow-[inset_0_2px_10px_rgba(0,0,0,0.02)] focus:ring-4 focus:ring-emerald-500/20 font-medium text-slate-800">
                               <SelectValue placeholder="เลือกภาษา" />
                             </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="english">English (US)</SelectItem>
-                              <SelectItem value="thai">ภาษาไทย (Thai)</SelectItem>
+                            <SelectContent className="rounded-2xl border border-slate-100 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] p-2">
+                              <SelectItem value="english" className="rounded-xl py-2.5 cursor-pointer">English (US)</SelectItem>
+                              <SelectItem value="thai" className="rounded-xl py-2.5 cursor-pointer">ภาษาไทย (Thai)</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
-                      </div>
-                      <div className="space-y-4 pt-4 border-t border-slate-100">
-                        <div className="flex items-center justify-between">
-                          <Label className="font-medium text-[0.85rem] text-slate-800">ความยาวเนื้อหา</Label>
-                          <span className="text-xs font-semibold text-purple-600 bg-purple-50 px-2 py-1 rounded-md">~{lengthWords[0]} คำ</span>
-                        </div>
-                        <Slider value={lengthWords} onValueChange={(val: any) => setLengthWords(val as number[])} max={3000} min={500} step={100} className="py-2" />
-                      </div>
-                    </CardContent>
-                  </Card>
 
-                  <Card className="md:col-span-1 flex flex-col p-2">
-                    <CardHeader className="pb-4">
-                      <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-                        <ImageIcon className="w-4 h-4 text-slate-400" /> สื่อประกอบเนื้อหา
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-6">
-                      <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                        <Label className="font-medium text-[0.85rem] text-slate-800">สร้างภาพปก</Label>
-                        <Switch checked={coverToggle} onCheckedChange={setCoverToggle} className="data-[state=checked]:bg-purple-600" />
+                        <div className="space-y-6 pt-6 border-t border-slate-100">
+                          <div className="flex items-center justify-between ml-2">
+                            <Label className="text-base font-bold text-slate-700">ความยาวเนื้อหา</Label>
+                            <span className="text-sm font-black text-emerald-600 bg-emerald-100 px-3 py-1 rounded-xl">~{lengthWords[0]} คำ</span>
+                          </div>
+                          <Slider value={lengthWords} onValueChange={(val: any) => setLengthWords(val as number[])} max={3000} min={500} step={100} className="py-2 px-2" />
+                        </div>
                       </div>
-                      <div className={`space-y-4 transition-opacity duration-200 ${!coverToggle ? 'opacity-50 pointer-events-none' : ''}`}>
-                        <div className="space-y-2">
-                          <Label className="font-medium text-[0.85rem] text-slate-800">สัดส่วนภาพ</Label>
+                    </div>
+
+                    <div className="bg-white/60 backdrop-blur-2xl border border-white/80 shadow-[0_8px_32px_rgba(0,0,0,0.04)] rounded-[2.5rem] p-8 relative overflow-hidden group">
+                      <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-purple-400/10 rounded-full blur-2xl group-hover:bg-purple-400/20 transition-all duration-700 pointer-events-none"></div>
+                      <h3 className="text-xl font-black tracking-tight text-slate-900 mb-8 flex items-center gap-3">
+                        <div className="bg-purple-100/50 p-2.5 rounded-2xl text-purple-600">
+                          <ImageIcon className="w-5 h-5" />
+                        </div>
+                        สื่อประกอบเนื้อหา
+                      </h3>
+                      
+                      <div className="space-y-8">
+                        <div className="flex justify-between items-center bg-white/80 p-5 rounded-[1.5rem] shadow-sm border border-slate-100/50 hover:border-emerald-200 transition-colors">
+                          <Label className="text-base font-bold text-slate-800">สร้างภาพปก AI</Label>
+                          <Switch checked={coverToggle} onCheckedChange={setCoverToggle} className="scale-110 data-[state=checked]:bg-emerald-500" />
+                        </div>
+                        
+                        <div className={`space-y-3 transition-opacity duration-300 ${!coverToggle ? 'opacity-40 pointer-events-none' : ''}`}>
+                          <Label className="text-base font-bold text-slate-700 ml-2">สัดส่วนภาพ</Label>
                           <Select value={aspectRatio} onValueChange={setAspectRatio} disabled={!coverToggle}>
-                            <SelectTrigger className="border-slate-200 rounded-lg focus:ring-purple-500">
+                            <SelectTrigger className="h-14 px-5 rounded-[1.25rem] text-base bg-white/80 border-0 hover:bg-white transition-all shadow-[inset_0_2px_10px_rgba(0,0,0,0.02)] focus:ring-4 focus:ring-emerald-500/20 font-medium text-slate-800">
                               <SelectValue placeholder="สัดส่วนภาพ" />
                             </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="16:9">16:9 (แนวนอน)</SelectItem>
-                              <SelectItem value="1:1">1:1 (จัตุรัส)</SelectItem>
+                            <SelectContent className="rounded-2xl border border-slate-100 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] p-2">
+                              <SelectItem value="16:9" className="rounded-xl py-2.5 cursor-pointer">16:9 (แนวนอน)</SelectItem>
+                              <SelectItem value="1:1" className="rounded-xl py-2.5 cursor-pointer">1:1 (จัตุรัส)</SelectItem>
                             </SelectContent>
                           </Select>
-                        </div>
-                      </div>
-                      <div className="space-y-4 pt-2">
-                         <div className="flex items-center justify-between">
-                          <Label className="font-medium text-[0.85rem] text-slate-800">จำนวนภาพแทรก</Label>
-                          <span className="text-xs font-semibold text-purple-600 bg-purple-50 px-2 py-1 rounded-md">{inlineCount[0]} ภาพ</span>
-                        </div>
-                        <Slider value={inlineCount} onValueChange={(val: any) => setInlineCount(val as number[])} max={5} min={0} step={1} />
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="md:col-span-2 flex flex-col p-2">
-                    <CardHeader className="pb-4">
-                      <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-                        <LinkIcon className="w-4 h-4 text-slate-400" /> ลิงก์ภายในและ Sitemap (Internal Linking)
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-6">
-                      <div className="space-y-2">
-                        <Label className="font-medium text-[0.85rem] text-slate-800">Reference URLs</Label>
-                        <Textarea 
-                          placeholder="https://...&#10;https://..." 
-                          value={internalLinks}
-                          onChange={(e) => setInternalLinks(e.target.value)}
-                          className="min-h-[100px] max-h-[300px] overflow-y-auto resize-none font-mono text-sm leading-relaxed border-slate-200 rounded-lg focus-visible:ring-purple-500"
-                        />
-                        <p className="text-xs text-slate-500 mt-1">ใส่ลิงก์ของคุณเพื่อให้ AI แทรกเข้าบทความอัตโนมัติ</p>
-                      </div>
-
-                      <div className="space-y-2 pt-2 border-t border-slate-100">
-                        <Label className="font-medium text-[0.85rem] text-slate-800 flex items-center gap-2">
-                          Sitemaps <span className="text-slate-400 font-normal">(Optional)</span>
-                        </Label>
-                        <InlineTagInput 
-                          tags={sitemaps} 
-                          setTags={setSitemaps} 
-                          placeholder="https://example.com/sitemap.xml" 
-                          buttonText="Add Sitemap"
-                        />
-                        <p className="text-xs text-slate-500 mt-2">เพิ่ม Sitemap เพื่อให้ AI ค้นหาลิงก์ภายในได้ครอบคลุมมากขึ้น</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              </TabsContent>
-
-              {/* Tab: Generations */}
-              <TabsContent value="generations" className="outline-none">
-                <div className="bg-white border text-sm border-slate-100 rounded-2xl shadow-[0px_4px_16px_rgba(0,0,0,0.02)] overflow-hidden">
-                  <Table>
-                    <TableHeader className="bg-slate-50/80">
-                      <TableRow className="border-b border-slate-200 hover:bg-transparent">
-                        <TableHead className="w-12 text-center py-3"><Checkbox className="border-slate-300 rounded-[4px]" /></TableHead>
-                        <TableHead className="font-medium text-slate-500 py-3 pl-2">Article</TableHead>
-                        <TableHead className="font-medium text-slate-500 py-3">Input</TableHead>
-                        <TableHead className="font-medium text-slate-500 py-3">Date</TableHead>
-                        <TableHead className="font-medium text-slate-500 py-3">Language</TableHead>
-                        <TableHead className="text-right py-3 pr-6"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {generatingQueue.map((queueItem, index) => (
-                        <TableRow key={`queue-${queueItem.id}`} className="group border-b border-slate-100 bg-slate-50/30">
-                          <TableCell className="w-12 text-center py-4"><Checkbox disabled className="border-slate-300 rounded-[4px]" /></TableCell>
-                          <TableCell className="font-medium text-slate-800 py-4 pl-2">
-                            <Badge variant="outline" className={`${index === 0 ? "text-orange-500 border-orange-200 bg-orange-50" : "text-slate-500 border-slate-200 bg-slate-50"} font-medium`}>
-                              {index === 0 ? (
-                                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                              ) : (
-                                <span className="w-2 h-2 rounded-full bg-slate-400 mr-2" />
-                              )}
-                              {index === 0 ? 'Generating' : 'Queued'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-slate-600 py-4 font-medium flex items-center gap-2">
-                            <SearchCode className="w-4 h-4 text-green-500"/>
-                            {queueItem.keyword}
-                          </TableCell>
-                          <TableCell className="text-slate-500 py-4">{new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric', hour12: true })}</TableCell>
-                          <TableCell className="text-slate-500 py-4">{queueItem.overrides?.language || language}</TableCell>
-                          <TableCell className="text-right py-4 pr-6">
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              className="h-8 text-red-500 border-red-200 hover:bg-red-50 hover:text-red-650 hover:border-red-300 font-medium text-xs px-2.5 rounded-lg transition-all flex items-center gap-1.5"
-                              title="ยกเลิกการสร้างและส่งกลับไปหน้านำเข้า"
-                              onClick={() => {
-                                setInputs(prev => {
-                                  if (prev.some(i => i.id === queueItem.id)) return prev;
-                                  return [...prev, queueItem];
-                                });
-                                setGeneratingQueue(prev => prev.filter(q => q.id !== queueItem.id));
-                                setActiveTab("inputs");
-                                
-                                const toast = document.createElement('div');
-                                toast.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white rounded-full px-6 py-3 text-sm font-medium shadow-xl flex items-center gap-3 z-50 animate-in fade-in slide-in-from-bottom-4';
-                                toast.innerHTML = `<svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> ยกเลิกการสร้างและย้ายกลับไปหน้านำเข้าแล้ว`;
-                                document.body.appendChild(toast);
-                                setTimeout(() => {
-                                  toast.classList.add('fade-out', 'slide-out-to-bottom-4');
-                                  setTimeout(() => toast.remove(), 300);
-                                }, 3000);
-                              }}
-                            >
-                              <X className="w-3.5 h-3.5" />
-                              ยกเลิก
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      
-                      {generatedArticles.length === 0 && generatingQueue.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={6} className="h-72 text-center hover:bg-transparent">
-                            <div className="flex flex-col items-center justify-center text-slate-500 space-y-4">
-                              <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center shadow-sm">
-                                <FileText className="w-8 h-8 text-slate-300" />
-                              </div>
-                              <div className="space-y-1">
-                                <h3 className="font-semibold text-slate-800">ยังไม่มีบทความที่สร้างเสร็จ</h3>
-                                <p className="text-sm text-slate-500">บทความที่สร้างสำเร็จจะถูกเก็บไว้ที่นี่ชั่วคราว</p>
-                              </div>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        generatedArticles.map((article) => (
-                          <TableRow key={article.id} className="group border-b border-slate-100 hover:bg-slate-50/50">
-                            <TableCell className="w-12 text-center py-4"><Checkbox className="border-slate-300 rounded-[4px]" /></TableCell>
-                            <TableCell className="font-medium text-slate-800 py-4 pl-2">
-                              {article.title}
-                            </TableCell>
-                            <TableCell className="text-slate-700 py-4 font-medium flex items-center gap-2">
-                              <SearchCode className="w-4 h-4 text-green-500"/>
-                              {article.keyword}
-                            </TableCell>
-                            <TableCell className="text-slate-500 py-4">{article.date}</TableCell>
-                            <TableCell className="text-slate-500 py-4">{article.language || 'English (US)'}</TableCell>
-                            <TableCell className="text-right py-4 pr-6">
-                              <div className="flex items-center justify-end gap-1">
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  className="h-8 w-8 text-slate-500 hover:text-slate-700"
-                                  onClick={() => {
-                                    setGeneratedArticle({ id: article.id, title: article.title, markdown: article.content });
-                                    setArticleModalOpen(true);
-                                  }}
-                                >
-                                  <Eye className="w-4 h-4" />
-                                </Button>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-slate-700">
-                                  <Send className="w-4 h-4" />
-                                </Button>
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  className="h-8 w-8 text-slate-500 hover:text-red-500"
-                                  onClick={() => setGeneratedArticles(prev => prev.filter(a => a.id !== article.id))}
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </TabsContent>
-              <TabsContent value="publications" className="bg-white border text-sm border-slate-100 rounded-2xl shadow-[0px_4px_16px_rgba(0,0,0,0.02)]">
-                <div className="p-16 text-center text-slate-500">
-                    ไม่มีบทความที่เผยแพร่
-                </div>
-              </TabsContent>
-              <TabsContent value="templates" className="bg-white border text-sm border-slate-100 rounded-2xl shadow-[0px_4px_16px_rgba(0,0,0,0.02)]">
-                <div className="p-16 text-center text-slate-500">
-                    การตั้งค่าเทมเพลตและบล็อก
-                </div>
-              </TabsContent>
-              {isAdmin && (
-              <TabsContent value="settings" className="bg-white border text-sm border-slate-200 rounded-lg shadow-sm">
-                <div className="p-8">
-                  <div className="max-w-4xl space-y-8">
-                    <h3 className="text-xl font-semibold text-slate-900 border-b border-slate-100 pb-4">การเชื่อมต่อ API (API Connections)</h3>
-                    
-                    <div className="grid md:grid-cols-2 gap-8">
-                      {/* Text Generation API */}
-                      <div className="space-y-4 p-5 bg-slate-50 border border-slate-100 rounded-xl">
-                        <div className="flex items-center gap-2 mb-2">
-                           <FileText className="w-5 h-5 text-blue-500" />
-                           <h4 className="font-semibold text-slate-800 text-base">ระบบสร้างเนื้อหาข้อความ (Text API)</h4>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="customApiKey" className="font-medium text-sm text-slate-700">API Key สำหรับเนื้อหาข้อความ</Label>
-                          <Input 
-                            id="customApiKey" 
-                            type="password"
-                            value={customApiKey}
-                            onChange={(e) => setCustomApiKey(e.target.value)}
-                            placeholder="ใส่ API Key สำหรับสร้างข้อความ..." 
-                            className="h-11 shadow-sm font-mono text-sm border-slate-200"
-                          />
-                          <p className="text-xs text-slate-500">
-                            ใช้สำหรับสร้างเนื้อหาบรรยายและโครงสร้างข้อมูลของบทความ
-                          </p>
                         </div>
                         
-                        <div className="space-y-2">
-                          <Label htmlFor="textApiModel" className="font-medium text-sm text-slate-700">โมเดล AI ที่ต้องการใช้ (AI Model)</Label>
-                          <Select 
-                            value={textApiModel} 
-                            onValueChange={(val) => setTextApiModel(val)}
-                          >
-                            <SelectTrigger id="textApiModel" className="h-11 shadow-sm text-sm border-slate-200 bg-white">
-                               <SelectValue placeholder="เลือกโมเดล AI" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="auto">Auto (ตรวจจับจาก API Key อัตโนมัติ)</SelectItem>
-                              <SelectItem value="gemini-1.5-flash">Gemini 1.5 Flash (Google)</SelectItem>
-                              <SelectItem value="gemini-1.5-pro">Gemini 1.5 Pro (Google)</SelectItem>
-                              <SelectItem value="gpt-4o-mini">GPT-4o Mini (OpenAI)</SelectItem>
-                              <SelectItem value="gpt-4o">GPT-4o (OpenAI)</SelectItem>
-                              <SelectItem value="gpt-5.5">GPT-5.5 (OpenAI)</SelectItem>
-                              <SelectItem value="o1-mini">o1-mini (OpenAI)</SelectItem>
-                              <SelectItem value="o3-mini">o3-mini (OpenAI)</SelectItem>
-                              <SelectItem value="claude-3-opus">Claude 3 Opus (Anthropic)</SelectItem>
-                              <SelectItem value="claude-3-5-sonnet">Claude 3.5 Sonnet (Anthropic)</SelectItem>
-                              <SelectItem value="claude-3-5-haiku">Claude 3.5 Haiku (Anthropic)</SelectItem>
-                              <SelectItem value="GLM-5.1">GLM-5.1 (Z.AI)</SelectItem>
-                              <SelectItem value="GLM-5">GLM-5 (Z.AI)</SelectItem>
-                              <SelectItem value="glm-5-turbo">glm-5-turbo (Z.AI)</SelectItem>
-                              <SelectItem value="GLM-4.7">GLM-4.7 (Z.AI)</SelectItem>
-                              <SelectItem value="GLM-4.6">GLM-4.6 (Z.AI)</SelectItem>
-                              <SelectItem value="GLM-5">GLM-5 (Z.AI)</SelectItem>
-                              <SelectItem value="glm-4-flash">glm-4-flash (Z.AI)</SelectItem>
-                              <SelectItem value="GLM-4-32B-0414-128K">GLM-4-32B (Z.AI)</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <p className="text-xs text-slate-500">
-                            เลือกโมเดลที่ต้องการ หรือตั้งเป็น Auto เพื่อให้ระบบเลือกตาม API Key ให้อัตโนมัติ
-                          </p>
-                        </div>
-                        
-                        <div className="space-y-2">
-                          <Label htmlFor="textApiBaseUrl" className="font-medium text-sm text-slate-700">Base URL (ตัวเลือกเสริมสำหรับ Proxy / Z.AI)</Label>
-                          <Input 
-                            id="textApiBaseUrl" 
-                            type="text"
-                            value={textApiBaseUrl}
-                            onChange={(e) => setTextApiBaseUrl(e.target.value)}
-                            placeholder="https://api.openai.com/v1" 
-                            className="h-11 shadow-sm font-mono text-sm border-slate-200"
-                          />
-                          <p className="text-xs text-slate-500">
-                            เว้นว่างไว้ถ้าใช้ของ Official. กรอกลิงก์เฉพาะกรณีใช้ API ผ่านตัวกลาง เช่น Z.AI (จำเป็นต้องเลือก Model เป็นฝั่ง OpenAI/Custom)
-                          </p>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="textApiPrompt" className="font-medium text-sm text-slate-700">คู่มือ / คำสั่งพิเศษ สำหรับ Text (รองรับการใส่ Link)</Label>
-                          <p className="text-xs text-slate-500">
-                            คุณสามารถพิมพ์คำสั่งพิเศษ หรือวาง Link เว็บไซต์ เพื่อให้ระบบดึงข้อมูลในเว็บนั้นมาเป็นความรู้ให้ AI ได้
-                          </p>
-                          <Textarea 
-                            id="textApiPrompt" 
-                            value={textApiPrompt}
-                            onChange={(e) => setTextApiPrompt(e.target.value)}
-                            placeholder="ใส่คำสั่งพิเศษ หรือ วาง Link เว็บไซต์ให้ AI อ่านทำความเข้าใจ เช่น 'คุณคือผู้เชี่ยวชาญ SEO ทำเนื้อหาตามเว็บนี้ https://example.com'..." 
-                            className="min-h-[100px] max-h-[300px] overflow-y-auto text-sm"
-                          />
-                        </div>
-                        <div className="pt-2 border-t border-slate-200 flex flex-col gap-2">
-                          <Button 
-                            onClick={testTextApi} 
-                            disabled={isTestingText}
-                            className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                          >
-                            {isTestingText ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <PlaySquare className="w-4 h-4 mr-2" />}
-                            ทดสอบ Text API
-                          </Button>
-                          {testTextStatus && (
-                            <div className={`p-3 text-sm rounded-lg flex items-start gap-2 ${testTextStatus.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                              <span>{testTextStatus.success ? '✅' : '❌'}</span>
-                              <span>{testTextStatus.message}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Image Generation API */}
-                      <div className="space-y-4 p-5 bg-slate-50 border border-slate-100 rounded-xl">
-                        <div className="flex items-center gap-2 mb-2">
-                           <ImageIcon className="w-5 h-5 text-purple-500" />
-                           <h4 className="font-semibold text-slate-800 text-base">ระบบสร้างรูปภาพ (Image API)</h4>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="customOpenAiApiKey" className="font-medium text-sm text-slate-700">API Key สำหรับสร้างรูปภาพ</Label>
-                          <Input 
-                            id="customOpenAiApiKey" 
-                            type="password"
-                            value={customOpenAiApiKey}
-                            onChange={(e) => setCustomOpenAiApiKey(e.target.value)}
-                            placeholder="ใส่ API Key สำหรับสร้างรูปภาพ..." 
-                            className="h-11 shadow-sm font-mono text-sm border-slate-200"
-                          />
-                          <p className="text-xs text-slate-500">
-                            ใช้สำหรับสร้างรูปภาพประกอบในบทความ
-                          </p>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="imageApiModel" className="font-medium text-sm text-slate-700">โมเดลสร้างรูปภาพ (Image Model)</Label>
-                          <Select 
-                            value={imageApiModel} 
-                            onValueChange={(val) => setImageApiModel(val)}
-                          >
-                            <SelectTrigger id="imageApiModel" className="h-11 shadow-sm text-sm border-slate-200 bg-white">
-                               <SelectValue placeholder="เลือกโมเดล Image" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="auto">Auto (GPT-Image-2)</SelectItem>
-                              <SelectItem value="gpt-image-2">GPT Image 2</SelectItem>
-                              <SelectItem value="gpt-image-1.5">GPT Image 1.5</SelectItem>
-                              <SelectItem value="gpt-image-1">GPT Image 1</SelectItem>
-                              <SelectItem value="gpt-image-1-mini">GPT Image 1 Mini</SelectItem>
-                              <SelectItem value="dall-e-3">DALL-E 3 (OpenAI)</SelectItem>
-                              <SelectItem value="dall-e-2">DALL-E 2 (OpenAI)</SelectItem>
-                              <SelectItem value="flux">Flux (Custom)</SelectItem>
-                              <SelectItem value="midjourney">Midjourney (Custom)</SelectItem>
-                              <SelectItem value="sdxl">SDXL (Custom)</SelectItem>
-                              <SelectItem value="GLM-Image">GLM-Image (Z.AI)</SelectItem>
-                              <SelectItem value="CogView-4-250304">CogView-4 (Z.AI)</SelectItem>
-                              <SelectItem value="seedream-4-0-250828">Seedream 4.0 (ByteDance)</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <p className="text-xs text-slate-500">
-                            ระบุชื่อโมเดลรูปภาพที่ต้องการใช้
-                          </p>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="imageApiBaseUrl" className="font-medium text-sm text-slate-700">Base URL (ตัวเลือกเสริมสำหรับ Proxy / Z.AI)</Label>
-                          <Input 
-                            id="imageApiBaseUrl" 
-                            type="text"
-                            value={imageApiBaseUrl}
-                            onChange={(e) => setImageApiBaseUrl(e.target.value)}
-                            placeholder="https://api.openai.com/v1" 
-                            className="h-11 shadow-sm font-mono text-sm border-slate-200"
-                          />
-                          <p className="text-xs text-slate-500">
-                            เว้นว่างไว้ถ้าใช้ของ Official. กรอกลิงก์เฉพาะกรณีใช้ API ผ่านตัวกลาง เช่น Z.AI เพื่อสร้างรูป
-                          </p>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="imageApiPrompt" className="font-medium text-sm text-slate-700">คู่มือ / คำสั่งพิเศษ สำหรับหน้าตาภาพ (รองรับการใส่ Link)</Label>
-                          <p className="text-xs text-slate-500">
-                            คุณสามารถพิมพ์สไตล์ภาพ หรือวาง Link เว็บไซต์ เพื่อให้ระบบนำเนื้อหาในเว็บนั้นมาดัดแปลงเป็นสไตล์ภาพให้ AI
-                          </p>
-                          <Textarea 
-                            id="imageApiPrompt" 
-                            value={imageApiPrompt}
-                            onChange={(e) => setImageApiPrompt(e.target.value)}
-                            placeholder="ใส่สไตล์รูปภาพที่ต้องการ หรือ วาง Link เว็บไซต์ให้ AI อ่านเพื่อดึงสไตล์ภาพ (เช่น https://example.com)..." 
-                            className="min-h-[100px] max-h-[300px] overflow-y-auto text-sm"
-                          />
-                        </div>
-                        <div className="pt-2 border-t border-slate-200 flex flex-col gap-2">
-                          <Button 
-                            onClick={testImageApi} 
-                            disabled={isTestingImage}
-                            className="w-full bg-purple-600 hover:bg-purple-700 text-white"
-                          >
-                            {isTestingImage ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <PlaySquare className="w-4 h-4 mr-2" />}
-                            ทดสอบ Image API
-                          </Button>
-                          {testImageStatus && (
-                            <div className={`p-3 text-sm rounded-lg flex items-start gap-2 ${testImageStatus.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                              <span>{testImageStatus.success ? '✅' : '❌'}</span>
-                              <span>{testImageStatus.message}</span>
-                            </div>
-                          )}
+                        <div className="space-y-6 pt-6 border-t border-slate-100">
+                           <div className="flex items-center justify-between ml-2">
+                            <Label className="text-base font-bold text-slate-700">จำนวนภาพแทรกในบทความ</Label>
+                            <span className="text-sm font-black text-emerald-600 bg-emerald-100 px-3 py-1 rounded-xl">{inlineCount[0]} ภาพ</span>
+                          </div>
+                          <Slider value={inlineCount} onValueChange={(val: any) => setInlineCount(val as number[])} max={5} min={0} step={1} className="px-2" />
                         </div>
                       </div>
                     </div>
                   </div>
                 </div>
               </TabsContent>
-              )}
+
+              {/* Tab: Generations */}
+              <TabsContent value="generations" className="outline-none pt-2">
+                <div className="bg-white text-sm rounded-[2rem] border-0 shadow-sm overflow-hidden px-4 sm:px-6 py-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 px-4 py-4 sm:px-6">
+                  {generatingQueue.map((queueItem, index) => {
+                    const isActive = activeWorkerIds.has(queueItem.id);
+                    return (
+                    <div key={`queue-${queueItem.id}`} className="group bg-white rounded-3xl p-6 border border-orange-100 shadow-sm relative overflow-hidden flex flex-col h-[280px]">
+                      <div className="flex justify-between items-start mb-4">
+                        <Badge variant="outline" className={`${isActive ? "text-orange-600 border-orange-200 bg-orange-50" : "text-slate-500 border-slate-200 bg-slate-50"} font-bold px-3 py-1 rounded-xl`}>
+                          {isActive ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <span className="w-2 h-2 rounded-full bg-slate-400 mr-2" />
+                          )}
+                          {isActive ? 'กำลังสร้าง...' : `คิว #${index + 1}`}
+                        </Badge>
+                        <Badge variant="secondary" className="font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded-lg border-0">
+                          {queueItem.overrides?.language === 'thai' ? 'TH' : 'EN'}
+                        </Badge>
+                      </div>
+
+                      <div className="mb-auto">
+                        <h4 className="text-xl font-bold text-slate-900 mb-2 line-clamp-2 leading-tight">
+                          {queueItem.keyword}
+                        </h4>
+                        <div className="flex items-center text-xs font-medium text-slate-400 mt-2">
+                          <SearchCode className="w-3.5 h-3.5 mr-1.5" /> Input Keyword
+                        </div>
+                      </div>
+
+                      <div className="pt-4 border-t border-slate-100 flex items-center justify-between mt-4">
+                        <span className="text-xs font-medium text-slate-400">
+                          {new Date().toLocaleString('th-TH', { month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric' })}
+                        </span>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-9 text-red-600 bg-red-50 hover:bg-red-100 hover:text-red-700 font-bold rounded-xl px-4 transition-all"
+                          onClick={() => {
+                            cancelledWorkersRef.current.add(queueItem.id);
+                            setInputs(prev => {
+                              if (prev.some(i => i.id === queueItem.id)) return prev;
+                              return [...prev, queueItem];
+                            });
+                            setGeneratingQueue(prev => prev.filter(q => q.id !== queueItem.id));
+                            setGeneratedArticles(prev => prev.filter(a => !a.id.startsWith(`temp_${queueItem.id}_`) && a.id !== `temp_${queueItem.id}`));
+                            setActiveTab("inputs");
+                            
+                            const toast = document.createElement('div');
+                            toast.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-white text-slate-900 rounded-full px-6 py-3 text-sm font-bold shadow-xl flex items-center gap-3 z-50 animate-in fade-in slide-in-from-bottom-4';
+                            toast.innerHTML = `<svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> ยกเลิกการสร้างและย้ายกลับไปหน้านำเข้าแล้ว`;
+                            document.body.appendChild(toast);
+                            setTimeout(() => {
+                              toast.classList.add('fade-out', 'slide-out-to-bottom-4');
+                              setTimeout(() => toast.remove(), 300);
+                            }, 3000);
+                          }}
+                        >
+                          <X className="w-4 h-4 mr-1.5" /> ยกเลิก
+                        </Button>
+                      </div>
+                    </div>
+                    );
+                  })}
+
+                  {generatedArticles.length === 0 && generatingQueue.length === 0 ? (
+                    <div className="col-span-full bg-white text-sm rounded-[2rem] border border-slate-100 shadow-sm p-12 flex flex-col items-center justify-center min-h-[400px]">
+                      <div className="flex flex-col items-center justify-center text-slate-500 space-y-6">
+                        <div className="w-24 h-24 rounded-3xl bg-slate-50 flex items-center justify-center relative overflow-hidden group border border-slate-100">
+                          <FileText className="w-12 h-12 text-slate-400 relative z-10" />
+                        </div>
+                        <div className="space-y-2 text-center">
+                          <h3 className="text-xl font-bold text-slate-900">ยังไม่มีบทความที่สร้างเสร็จ</h3>
+                          <p className="text-slate-500 max-w-sm mx-auto leading-relaxed font-medium">บทความที่สร้างสำเร็จจะถูกเก็บไว้ที่นี่ชั่วคราว</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    generatedArticles.map((article, idx) => (
+                      <div key={`${article.id}-${idx}`} className="group bg-white rounded-3xl p-6 border border-emerald-100 shadow-sm hover:shadow-md transition-all relative overflow-hidden flex flex-col h-[280px]">
+                        <div className="flex justify-between items-start mb-4">
+                          <Badge variant="outline" className="text-emerald-700 border-emerald-200 bg-emerald-50 font-bold px-3 py-1 rounded-xl">
+                            <CheckCircle2 className="w-4 h-4 mr-2" /> เสร็จสิ้น
+                          </Badge>
+                          <Badge variant="secondary" className="font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded-lg border-0">
+                            {article.language === 'thai' ? 'TH' : 'EN'}
+                          </Badge>
+                        </div>
+
+                        <div className="mb-auto">
+                          <h4 className="text-xl font-bold text-slate-900 mb-2 line-clamp-2 leading-tight">
+                            {article.title}
+                          </h4>
+                          <div className="flex items-center text-xs font-medium text-slate-400 mt-2">
+                            <SearchCode className="w-3.5 h-3.5 mr-1.5 text-emerald-500" /> {article.keyword}
+                          </div>
+                        </div>
+
+                        <div className="pt-4 border-t border-slate-100 flex items-center justify-between mt-4">
+                          <span className="text-xs font-medium text-slate-400">
+                            {article.date}
+                          </span>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-9 w-9 rounded-xl bg-slate-50 text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+                              onClick={() => {
+                                setGeneratedArticle({ ...article, markdown: article.content });
+                                setArticleModalOpen(true);
+                              }}
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl bg-slate-50 text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 transition-colors">
+                              <Send className="w-4 h-4" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-9 w-9 rounded-xl bg-slate-50 text-slate-600 hover:text-red-600 hover:bg-red-50 transition-colors"
+                              onClick={() => setGeneratedArticles(prev => prev.filter(a => a.id !== article.id))}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                </div>
+              </TabsContent>
+              <TabsContent value="publications" className="bg-white text-sm rounded-[2rem] border-0 shadow-sm outline-none pt-2">
+                <div className="p-16 text-center text-slate-500 font-medium">
+                    ไม่มีบทความที่เผยแพร่
+                </div>
+              </TabsContent>
 
             </Tabs>
           </div>
-        </div>
-      </main>
+        </main>
 
-      {/* Item Settings (Overrides) Modal */}
+      {/* Item Settings (Overrides) Modal - Slide-over Bento */}
       <Dialog open={!!editingItem} onOpenChange={(open) => !open && setEditingItem(null)}>
-        <DialogContent className="w-[95vw] max-w-4xl sm:max-w-4xl md:w-[90vw] h-[85vh] flex flex-col p-0 overflow-hidden bg-white">
-          <DialogHeader className="px-8 py-6 border-b border-slate-200">
-            <DialogTitle className="text-xl">ปรับแต่งรายละเอียดบทความ SEO</DialogTitle>
-            <DialogDescription className="mt-2 text-slate-500">
-              คุณสามารถแก้ไขค่าเริ่มต้นของทั้งแคมเปญได้ในส่วน <span className="text-purple-600 underline cursor-pointer">เทมเพลตบทความ</span>
-            </DialogDescription>
+        <DialogContent className="!max-w-[1200px] w-[95vw] h-[90vh] !rounded-[2.5rem] bg-slate-50/90 backdrop-blur-3xl border border-white/60 shadow-[0_30px_100px_rgba(0,0,0,0.15)] overflow-hidden flex flex-col p-0 z-50">
+          
+          {/* Decorative Background Orbs */}
+          <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-gradient-to-br from-emerald-200/40 to-teal-100/10 rounded-full blur-[100px] -z-10 pointer-events-none translate-x-1/3 -translate-y-1/3"></div>
+          <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-gradient-to-tr from-blue-100/30 to-purple-100/30 rounded-full blur-[80px] -z-10 pointer-events-none -translate-x-1/4 translate-y-1/4"></div>
+
+          <DialogHeader className="px-12 py-10 border-b-0 bg-transparent flex-shrink-0 relative z-10 flex flex-row justify-between items-center">
+            <div>
+              <DialogTitle className="text-4xl font-black tracking-tighter text-slate-900 bg-clip-text text-transparent bg-gradient-to-br from-slate-900 to-slate-600">ปรับแต่งรายละเอียด SEO</DialogTitle>
+              <DialogDescription className="mt-3 text-slate-500 text-[16px] font-medium max-w-lg leading-relaxed">
+                กำหนดค่าการสร้างบทความแบบเจาะจง หรือปล่อยให้เป็นไปตาม <span className="text-emerald-600 font-bold hover:underline cursor-pointer transition-all">การตั้งค่าแคมเปญหลัก</span>
+              </DialogDescription>
+            </div>
+            <div className="hidden sm:flex gap-4">
+              <Button variant="ghost" onClick={() => setEditingItem(null)} className="rounded-[1.25rem] font-bold hover:bg-white/60 hover:shadow-sm text-slate-500 px-8 h-14 transition-all">ยกเลิก</Button>
+              <Button onClick={saveOverrides} className="bg-slate-900 hover:bg-slate-800 text-white rounded-[1.25rem] shadow-[0_10px_30px_-10px_rgba(0,0,0,0.4)] font-bold px-10 h-14 transition-all hover:scale-105">บันทึกและอัปเดต</Button>
+            </div>
           </DialogHeader>
           
-          <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
-            {/* Sidebar Mapping */}
-            <div className="w-full md:w-64 shrink-0 border-b md:border-r md:border-b-0 border-slate-100 p-2 md:p-4 space-x-2 md:space-x-0 md:space-y-1 flex md:flex-col overflow-x-auto md:overflow-y-auto">
-              <Button variant="ghost" onClick={() => setActiveModalTab('details')} className={`w-auto md:w-full shrink-0 justify-start font-medium rounded-xl py-6 ${activeModalTab === 'details' ? 'text-slate-900 bg-slate-100' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}>
-                <AlignLeft className="w-5 h-5 md:mr-3" /> <span className="hidden md:inline">รายละเอียด</span>
+          <div className="flex flex-col md:flex-row flex-1 overflow-hidden bg-transparent px-4 sm:px-12 pb-12 gap-10">
+            {/* Floating Navigation Sidebar */}
+            <div className="w-full md:w-[320px] shrink-0 flex flex-col gap-4 overflow-y-auto hide-scrollbar pb-10 pl-2 pt-2">
+              <Button variant="ghost" onClick={() => setActiveModalTab('details')} className={`w-full justify-start font-black text-sm rounded-[1.5rem] py-8 px-6 transition-all duration-300 ${activeModalTab === 'details' ? 'bg-gradient-to-r from-slate-900 to-slate-700 text-white shadow-[0_15px_30px_-10px_rgba(0,0,0,0.3)] translate-x-3' : 'bg-white/40 text-slate-500 hover:text-slate-900 hover:bg-white/80 hover:shadow-sm border border-white/60 hover:translate-x-1'}`}>
+                <AlignLeft className={`w-6 h-6 mr-4 ${activeModalTab === 'details' ? 'text-emerald-400' : 'text-slate-400'}`} /> <span className="hidden md:inline tracking-wide">รายละเอียด (Details)</span>
               </Button>
-              <Button variant="ghost" onClick={() => setActiveModalTab('outline')} className={`w-auto md:w-full shrink-0 justify-start font-medium rounded-xl py-6 ${activeModalTab === 'outline' ? 'text-slate-900 bg-slate-100' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}>
-                <List className="w-5 h-5 md:mr-3" /> <span className="hidden md:inline">โครงสร้าง Outline</span>
+              <Button variant="ghost" onClick={() => setActiveModalTab('outline')} className={`w-full justify-start font-black text-sm rounded-[1.5rem] py-8 px-6 transition-all duration-300 ${activeModalTab === 'outline' ? 'bg-gradient-to-r from-slate-900 to-slate-700 text-white shadow-[0_15px_30px_-10px_rgba(0,0,0,0.3)] translate-x-3' : 'bg-white/40 text-slate-500 hover:text-slate-900 hover:bg-white/80 hover:shadow-sm border border-white/60 hover:translate-x-1'}`}>
+                <List className={`w-6 h-6 mr-4 ${activeModalTab === 'outline' ? 'text-emerald-400' : 'text-slate-400'}`} /> <span className="hidden md:inline tracking-wide">โครงสร้าง Outline</span>
               </Button>
-              <Button variant="ghost" onClick={() => setActiveModalTab('content')} className={`w-auto md:w-full shrink-0 justify-start font-medium rounded-xl py-6 ${activeModalTab === 'content' ? 'text-slate-900 bg-slate-100' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}>
-                <FileText className="w-5 h-5 md:mr-3" /> <span className="hidden md:inline">เนื้อหา</span>
+              <Button variant="ghost" onClick={() => setActiveModalTab('content')} className={`w-full justify-start font-black text-sm rounded-[1.5rem] py-8 px-6 transition-all duration-300 ${activeModalTab === 'content' ? 'bg-gradient-to-r from-slate-900 to-slate-700 text-white shadow-[0_15px_30px_-10px_rgba(0,0,0,0.3)] translate-x-3' : 'bg-white/40 text-slate-500 hover:text-slate-900 hover:bg-white/80 hover:shadow-sm border border-white/60 hover:translate-x-1'}`}>
+                <FileText className={`w-6 h-6 mr-4 ${activeModalTab === 'content' ? 'text-emerald-400' : 'text-slate-400'}`} /> <span className="hidden md:inline tracking-wide">เนื้อหา (Content)</span>
               </Button>
-              <Button variant="ghost" onClick={() => setActiveModalTab('knowledge')} className={`w-auto md:w-full shrink-0 justify-start font-medium rounded-xl py-6 ${activeModalTab === 'knowledge' ? 'text-slate-900 bg-slate-100' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}>
-                <BookOpen className="w-5 h-5 md:mr-3" /> <span className="hidden md:inline">ความรู้เสริม</span>
+
+              <Button variant="ghost" onClick={() => setActiveModalTab('formatting')} className={`w-full justify-start font-black text-sm rounded-[1.5rem] py-8 px-6 transition-all duration-300 ${activeModalTab === 'formatting' ? 'bg-gradient-to-r from-slate-900 to-slate-700 text-white shadow-[0_15px_30px_-10px_rgba(0,0,0,0.3)] translate-x-3' : 'bg-white/40 text-slate-500 hover:text-slate-900 hover:bg-white/80 hover:shadow-sm border border-white/60 hover:translate-x-1'}`}>
+                <Type className={`w-6 h-6 mr-4 ${activeModalTab === 'formatting' ? 'text-emerald-400' : 'text-slate-400'}`} /> <span className="hidden md:inline tracking-wide">รูปแบบอักษร (Format)</span>
               </Button>
-              <Button variant="ghost" onClick={() => setActiveModalTab('formatting')} className={`w-auto md:w-full shrink-0 justify-start font-medium rounded-xl py-6 ${activeModalTab === 'formatting' ? 'text-slate-900 bg-slate-100' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}>
-                <Type className="w-5 h-5 md:mr-3" /> <span className="hidden md:inline">รูปแบบอักษร</span>
+              <Button variant="ghost" onClick={() => setActiveModalTab('structure')} className={`w-full justify-start font-black text-sm rounded-[1.5rem] py-8 px-6 transition-all duration-300 ${activeModalTab === 'structure' ? 'bg-gradient-to-r from-slate-900 to-slate-700 text-white shadow-[0_15px_30px_-10px_rgba(0,0,0,0.3)] translate-x-3' : 'bg-white/40 text-slate-500 hover:text-slate-900 hover:bg-white/80 hover:shadow-sm border border-white/60 hover:translate-x-1'}`}>
+                <Layout className={`w-6 h-6 mr-4 ${activeModalTab === 'structure' ? 'text-emerald-400' : 'text-slate-400'}`} /> <span className="hidden md:inline tracking-wide">โครงสร้างบทความ</span>
               </Button>
-              <Button variant="ghost" onClick={() => setActiveModalTab('structure')} className={`w-auto md:w-full shrink-0 justify-start font-medium rounded-xl py-6 ${activeModalTab === 'structure' ? 'text-slate-900 bg-slate-100' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}>
-                <Layout className="w-5 h-5 md:mr-3" /> <span className="hidden md:inline">โครงสร้างบทความ</span>
+              <Button variant="ghost" onClick={() => setActiveModalTab('internal-linking')} className={`w-full justify-start font-black text-sm rounded-[1.5rem] py-8 px-6 transition-all duration-300 ${activeModalTab === 'internal-linking' ? 'bg-gradient-to-r from-slate-900 to-slate-700 text-white shadow-[0_15px_30px_-10px_rgba(0,0,0,0.3)] translate-x-3' : 'bg-white/40 text-slate-500 hover:text-slate-900 hover:bg-white/80 hover:shadow-sm border border-white/60 hover:translate-x-1'}`}>
+                <LinkIcon className={`w-6 h-6 mr-4 ${activeModalTab === 'internal-linking' ? 'text-emerald-400' : 'text-slate-400'}`} /> <span className="hidden md:inline tracking-wide">ลิงก์ภายใน (Internal)</span>
               </Button>
-              <Button variant="ghost" onClick={() => setActiveModalTab('internal-linking')} className={`w-auto md:w-full shrink-0 justify-start font-medium rounded-xl py-6 ${activeModalTab === 'internal-linking' ? 'text-slate-900 bg-slate-100' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}>
-                <LinkIcon className="w-5 h-5 md:mr-3" /> <span className="hidden md:inline">ลิงก์ภายใน</span>
+              <Button variant="ghost" onClick={() => setActiveModalTab('external-linking')} className={`w-full justify-start font-black text-sm rounded-[1.5rem] py-8 px-6 transition-all duration-300 ${activeModalTab === 'external-linking' ? 'bg-gradient-to-r from-slate-900 to-slate-700 text-white shadow-[0_15px_30px_-10px_rgba(0,0,0,0.3)] translate-x-3' : 'bg-white/40 text-slate-500 hover:text-slate-900 hover:bg-white/80 hover:shadow-sm border border-white/60 hover:translate-x-1'}`}>
+                <ExternalLink className={`w-6 h-6 mr-4 ${activeModalTab === 'external-linking' ? 'text-emerald-400' : 'text-slate-400'}`} /> <span className="hidden md:inline tracking-wide">ลิงก์ภายนอก (External)</span>
               </Button>
-              <Button variant="ghost" onClick={() => setActiveModalTab('external-linking')} className={`w-auto md:w-full shrink-0 justify-start font-medium rounded-xl py-6 ${activeModalTab === 'external-linking' ? 'text-slate-900 bg-slate-100' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}>
-                <ExternalLink className="w-5 h-5 md:mr-3" /> <span className="hidden md:inline">ลิงก์ภายนอก</span>
+              <Button variant="ghost" onClick={() => setActiveModalTab('images')} className={`w-full justify-start font-black text-sm rounded-[1.5rem] py-8 px-6 transition-all duration-300 ${activeModalTab === 'images' ? 'bg-gradient-to-r from-slate-900 to-slate-700 text-white shadow-[0_15px_30px_-10px_rgba(0,0,0,0.3)] translate-x-3' : 'bg-white/40 text-slate-500 hover:text-slate-900 hover:bg-white/80 hover:shadow-sm border border-white/60 hover:translate-x-1'}`}>
+                <ImageIcon className={`w-6 h-6 mr-4 ${activeModalTab === 'images' ? 'text-emerald-400' : 'text-slate-400'}`} /> <span className="hidden md:inline tracking-wide">รูปภาพ (Images)</span>
               </Button>
-              <Button variant="ghost" onClick={() => setActiveModalTab('images')} className={`w-auto md:w-full shrink-0 justify-start font-medium rounded-xl py-6 ${activeModalTab === 'images' ? 'text-slate-900 bg-slate-100' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}>
-                <ImageIcon className="w-5 h-5 md:mr-3" /> <span className="hidden md:inline">รูปภาพ</span>
-              </Button>
-              <Button variant="ghost" onClick={() => setActiveModalTab('videos')} className={`w-auto md:w-full shrink-0 justify-start font-medium rounded-xl py-6 ${activeModalTab === 'videos' ? 'text-slate-900 bg-slate-100' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}>
-                <PlaySquare className="w-5 h-5 md:mr-3" /> <span className="hidden md:inline">วิดีโอ</span>
+              <Button variant="ghost" onClick={() => setActiveModalTab('videos')} className={`w-full justify-start font-black text-sm rounded-[1.5rem] py-8 px-6 transition-all duration-300 ${activeModalTab === 'videos' ? 'bg-gradient-to-r from-slate-900 to-slate-700 text-white shadow-[0_15px_30px_-10px_rgba(0,0,0,0.3)] translate-x-3' : 'bg-white/40 text-slate-500 hover:text-slate-900 hover:bg-white/80 hover:shadow-sm border border-white/60 hover:translate-x-1'}`}>
+                <PlaySquare className={`w-6 h-6 mr-4 ${activeModalTab === 'videos' ? 'text-emerald-400' : 'text-slate-400'}`} /> <span className="hidden md:inline tracking-wide">วิดีโอ (Videos)</span>
               </Button>
             </div>
 
-            {/* Content Area */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-10 bg-white">
-              <div className="max-w-2xl space-y-8">
+            {/* Content Area - Floating Card */}
+            <div className="flex-1 overflow-y-auto bg-white/60 backdrop-blur-3xl rounded-[3rem] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05)] border border-white p-8 sm:p-14 hide-scrollbar">
+              <div className="max-w-3xl space-y-12 pb-10">
                 
                 {/* Details Section */}
                 {activeModalTab === 'details' && (
-                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="space-y-3">
-                    <Label className="text-sm font-semibold">Focus Keyword <span className="text-red-500">*</span></Label>
+                <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="space-y-5 bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white">
+                    <Label className="text-xl font-black tracking-tight text-slate-800 flex items-center">
+                      <span className="bg-emerald-100 text-emerald-600 p-2 rounded-xl mr-3"><AlignLeft className="w-5 h-5"/></span>
+                      Focus Keyword <span className="text-rose-500 ml-2 text-2xl">*</span>
+                    </Label>
                     <Input 
                       value={editingItem?.keyword || ''} 
                       onChange={(e) => setEditingItem(prev => prev ? {...prev, keyword: e.target.value} : null)}
-                      className="rounded-lg h-10"
+                      className="text-xl h-20 px-8 rounded-[1.75rem] bg-white border-0 focus-visible:ring-4 focus-visible:ring-emerald-500/20 transition-all shadow-[inset_0_2px_15px_rgba(0,0,0,0.02)] font-black text-slate-900"
                     />
-                    <p className="text-sm text-slate-500">The article will be centered around this keyword.</p>
+                    <p className="text-sm font-bold text-slate-400 ml-4">The article will be centered around this keyword.</p>
                   </div>
 
-                  <div className="space-y-3">
+                  <div className="space-y-5 bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white">
                     <div className="flex justify-between items-center">
-                      <Label className="text-sm font-semibold">Article Title</Label>
-                      <Button variant="ghost" onClick={() => alert('Generative feature is coming soon!')} className="text-purple-600 font-semibold h-auto p-0 hover:bg-transparent hover:text-purple-700 underline underline-offset-2">
-                        <Sparkles className="w-4 h-4 mr-2"/> Generate Title
+                      <Label className="text-xl font-black tracking-tight text-slate-800 flex items-center">
+                        <span className="bg-blue-100 text-blue-600 p-2 rounded-xl mr-3"><Type className="w-5 h-5"/></span>
+                        Article Title
+                      </Label>
+                      <Button variant="ghost" onClick={() => alert('Generative feature is coming soon!')} className="text-emerald-600 font-black h-12 px-6 rounded-2xl bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-700 transition-colors shadow-sm">
+                        <Sparkles className="w-5 h-5 mr-2"/> Generate Title
                       </Button>
                     </div>
                     <Input 
                       value={editingItem?.title || ''} 
                       onChange={(e) => setEditingItem(prev => prev ? {...prev, title: e.target.value} : null)}
                       placeholder="Leave blank to generate automatically"
-                      className="rounded-lg h-10"
+                      className="text-xl h-20 px-8 rounded-[1.75rem] bg-white border-0 focus-visible:ring-4 focus-visible:ring-emerald-500/20 transition-all shadow-[inset_0_2px_15px_rgba(0,0,0,0.02)] font-black text-slate-900 placeholder:text-slate-300 placeholder:font-medium"
                     />
-                    <p className="text-sm text-slate-500">This will be the title of the article. You can leave blank so it gets generated along with the article.</p>
+                    <p className="text-sm font-bold text-slate-400 ml-4">This will be the title of the article. You can leave blank so it gets generated along with the article.</p>
                   </div>
 
-                  <div className="space-y-3 pt-2">
-                    <div className="flex justify-between items-center">
-                      <Label className="text-sm font-semibold">Include Keywords</Label>
-                      <Button variant="ghost" onClick={() => alert('Generative feature is coming soon!')} className="text-purple-600 font-semibold h-auto p-0 hover:bg-transparent hover:text-purple-700 underline underline-offset-2">
-                        <Sparkles className="w-4 h-4 mr-2"/> Generate Keywords
+                  <div className="space-y-5 bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white">
+                    <div className="flex justify-between items-center mb-4">
+                      <Label className="text-xl font-black tracking-tight text-slate-800 flex items-center">
+                        <span className="bg-purple-100 text-purple-600 p-2 rounded-xl mr-3"><Hash className="w-5 h-5"/></span>
+                        Include Keywords
+                      </Label>
+                      <Button variant="ghost" onClick={() => alert('Generative feature is coming soon!')} className="text-emerald-600 font-black h-12 px-6 rounded-2xl bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-700 transition-colors shadow-sm">
+                        <Sparkles className="w-5 h-5 mr-2"/> Generate Keywords
                       </Button>
                     </div>
                     <DynamicInputList 
@@ -2037,299 +1896,295 @@ export default function CampaignSetup() {
                       placeholder="how to bake bread" 
                       buttonText="Add Keyword"
                     />
-                    <p className="text-sm text-slate-500 pt-2">We will force-feed these keywords to the article. Make sure the keywords are related to the article's topic and do not contain typos.</p>
+                    <p className="text-sm font-bold text-slate-400 ml-4 pt-2 leading-relaxed">We will force-feed these keywords to the article. Make sure the keywords are related to the article's topic and do not contain typos.</p>
                   </div>
                 </div>
                 )}
 
                 {/* Content Section (Overrides) */}
                 {activeModalTab === 'content' && (
-                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="space-y-3">
-                    <Label className="text-base font-medium">Language</Label>
+                <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="space-y-5 bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white">
+                    <Label className="text-xl font-black tracking-tight text-slate-800 flex items-center">
+                      <span className="bg-emerald-100 text-emerald-600 p-2 rounded-xl mr-3"><FileText className="w-5 h-5"/></span>
+                      Language
+                    </Label>
                     <Select 
                       value={editingItem?.overrides?.language || language} 
                       onValueChange={(val) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), language: val}} : null)}>
-                      <SelectTrigger className="py-6 rounded-xl text-base"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="english">English (US)</SelectItem>
-                        <SelectItem value="thai">Thai</SelectItem>
+                      <SelectTrigger className="h-20 px-8 rounded-[1.75rem] text-xl bg-white border-0 hover:bg-slate-50 transition-all shadow-[inset_0_2px_15px_rgba(0,0,0,0.02)] focus:ring-4 focus:ring-emerald-500/20 font-black text-slate-800"><SelectValue /></SelectTrigger>
+                      <SelectContent className="rounded-3xl border border-white/60 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)] p-3 bg-white/90 backdrop-blur-xl">
+                        <SelectItem value="english" className="rounded-2xl py-4 px-4 text-lg cursor-pointer focus:bg-emerald-50 focus:text-emerald-700 font-bold transition-colors">English (US)</SelectItem>
+                        <SelectItem value="thai" className="rounded-2xl py-4 px-4 text-lg cursor-pointer focus:bg-emerald-50 focus:text-emerald-700 font-bold transition-colors">Thai</SelectItem>
                       </SelectContent>
                     </Select>
-                    <p className="text-sm text-slate-500">The language in which all articles will be written in.</p>
+                    <p className="text-sm font-bold text-slate-400 ml-4">The language in which all articles will be written in.</p>
                   </div>
 
-                  <div className="space-y-3">
-                    <Label className="text-base font-medium">Target Country</Label>
+                  <div className="space-y-5 bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white">
+                    <Label className="text-xl font-black tracking-tight text-slate-800 flex items-center">
+                      <span className="bg-blue-100 text-blue-600 p-2 rounded-xl mr-3"><BookOpen className="w-5 h-5"/></span>
+                      Target Country
+                    </Label>
                     <Select 
                       value={editingItem?.overrides?.targetCountry || "united_states"} 
                       onValueChange={(val) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), targetCountry: val}} : null)}>
-                      <SelectTrigger className="py-6 rounded-xl text-base"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="united_states">United States</SelectItem>
-                        <SelectItem value="thailand">Thailand</SelectItem>
+                      <SelectTrigger className="h-20 px-8 rounded-[1.75rem] text-xl bg-white border-0 hover:bg-slate-50 transition-all shadow-[inset_0_2px_15px_rgba(0,0,0,0.02)] focus:ring-4 focus:ring-emerald-500/20 font-black text-slate-800"><SelectValue /></SelectTrigger>
+                      <SelectContent className="rounded-3xl border border-white/60 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)] p-3 bg-white/90 backdrop-blur-xl">
+                        <SelectItem value="united_states" className="rounded-2xl py-4 px-4 text-lg cursor-pointer focus:bg-emerald-50 focus:text-emerald-700 font-bold transition-colors">United States</SelectItem>
+                        <SelectItem value="thailand" className="rounded-2xl py-4 px-4 text-lg cursor-pointer focus:bg-emerald-50 focus:text-emerald-700 font-bold transition-colors">Thailand</SelectItem>
                       </SelectContent>
                     </Select>
-                    <p className="text-sm text-slate-500">Generate location-specific content. Important for features like Connect to Web and External Linking.</p>
+                    <p className="text-sm font-bold text-slate-400 ml-4">Generate location-specific content. Important for features like Connect to Web and External Linking.</p>
                   </div>
                   
-                  <div className="space-y-3">
-                    <Label className="text-base font-medium">Tone of Voice</Label>
+                  <div className="space-y-5 bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white">
+                    <Label className="text-xl font-black tracking-tight text-slate-800 flex items-center">
+                      <span className="bg-purple-100 text-purple-600 p-2 rounded-xl mr-3"><Type className="w-5 h-5"/></span>
+                      Tone of Voice
+                    </Label>
                     <Input 
-                      placeholder="neutral"
+                      placeholder="e.g. Professional, Funny, Academic"
                       value={editingItem?.overrides?.tone || tone} 
                       onChange={(e) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), tone: e.target.value}} : null)}
-                      className="text-base py-6 rounded-xl"
+                      className="text-xl h-20 px-8 rounded-[1.75rem] bg-white border-0 focus-visible:ring-4 focus-visible:ring-emerald-500/20 transition-all shadow-[inset_0_2px_15px_rgba(0,0,0,0.02)] font-black text-slate-800 placeholder:text-slate-300 placeholder:font-medium"
                     />
-                    <p className="text-sm text-slate-500">Examples: funny, informal, academic</p>
+                    <p className="text-sm font-bold text-slate-400 ml-4">Examples: funny, informal, academic</p>
                   </div>
 
-                  <div className="space-y-3">
-                    <Label className="text-base font-medium">Point of View</Label>
+                  <div className="space-y-5 bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white">
+                    <Label className="text-xl font-black tracking-tight text-slate-800 flex items-center">
+                      <span className="bg-rose-100 text-rose-600 p-2 rounded-xl mr-3"><Layout className="w-5 h-5"/></span>
+                      Point of View
+                    </Label>
                     <Select 
                       value={editingItem?.overrides?.pov || pov} 
                       onValueChange={(val) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), pov: val}} : null)}>
-                      <SelectTrigger className="py-6 rounded-xl text-base"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="automatic">Automatic</SelectItem>
-                        <SelectItem value="first">First Person (I/We)</SelectItem>
-                        <SelectItem value="second">Second Person (You)</SelectItem>
-                        <SelectItem value="third">Third Person (He/She/They)</SelectItem>
+                      <SelectTrigger className="h-20 px-8 rounded-[1.75rem] text-xl bg-white border-0 hover:bg-slate-50 transition-all shadow-[inset_0_2px_15px_rgba(0,0,0,0.02)] focus:ring-4 focus:ring-emerald-500/20 font-black text-slate-800"><SelectValue /></SelectTrigger>
+                      <SelectContent className="rounded-3xl border border-white/60 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)] p-3 bg-white/90 backdrop-blur-xl">
+                        <SelectItem value="automatic" className="rounded-2xl py-4 px-4 text-lg cursor-pointer focus:bg-emerald-50 focus:text-emerald-700 font-bold transition-colors">Automatic</SelectItem>
+                        <SelectItem value="first" className="rounded-2xl py-4 px-4 text-lg cursor-pointer focus:bg-emerald-50 focus:text-emerald-700 font-bold transition-colors">First Person (I/We)</SelectItem>
+                        <SelectItem value="second" className="rounded-2xl py-4 px-4 text-lg cursor-pointer focus:bg-emerald-50 focus:text-emerald-700 font-bold transition-colors">Second Person (You)</SelectItem>
+                        <SelectItem value="third" className="rounded-2xl py-4 px-4 text-lg cursor-pointer focus:bg-emerald-50 focus:text-emerald-700 font-bold transition-colors">Third Person (He/She/They)</SelectItem>
                       </SelectContent>
                     </Select>
-                    <p className="text-sm text-slate-500">This will affect the pronouns used in the article.</p>
+                    <p className="text-sm font-bold text-slate-400 ml-4">This will affect the pronouns used in the article.</p>
                   </div>
 
-                  <div className="space-y-3">
-                    <Label className="text-base font-medium">Formality</Label>
+                  <div className="space-y-5 bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white">
+                    <Label className="text-xl font-black tracking-tight text-slate-800 flex items-center">
+                      <span className="bg-amber-100 text-amber-600 p-2 rounded-xl mr-3"><Hash className="w-5 h-5"/></span>
+                      Formality
+                    </Label>
                     <Select 
                       value={editingItem?.overrides?.formality || "automatic"} 
                       onValueChange={(val) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), formality: val}} : null)}>
-                      <SelectTrigger className="py-6 rounded-xl text-base"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="automatic">Automatic</SelectItem>
-                        <SelectItem value="formal">Formal</SelectItem>
-                        <SelectItem value="informal">Informal</SelectItem>
+                      <SelectTrigger className="h-20 px-8 rounded-[1.75rem] text-xl bg-white border-0 hover:bg-slate-50 transition-all shadow-[inset_0_2px_15px_rgba(0,0,0,0.02)] focus:ring-4 focus:ring-emerald-500/20 font-black text-slate-800"><SelectValue /></SelectTrigger>
+                      <SelectContent className="rounded-3xl border border-white/60 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)] p-3 bg-white/90 backdrop-blur-xl">
+                        <SelectItem value="automatic" className="rounded-2xl py-4 px-4 text-lg cursor-pointer focus:bg-emerald-50 focus:text-emerald-700 font-bold transition-colors">Automatic</SelectItem>
+                        <SelectItem value="formal" className="rounded-2xl py-4 px-4 text-lg cursor-pointer focus:bg-emerald-50 focus:text-emerald-700 font-bold transition-colors">Formal</SelectItem>
+                        <SelectItem value="informal" className="rounded-2xl py-4 px-4 text-lg cursor-pointer focus:bg-emerald-50 focus:text-emerald-700 font-bold transition-colors">Informal</SelectItem>
                       </SelectContent>
                     </Select>
-                    <p className="text-sm text-slate-500">Useful if selected language has both formal & informal verb conjugations.</p>
+                    <p className="text-sm font-bold text-slate-400 ml-4">Useful if selected language has both formal & informal verb conjugations.</p>
                   </div>
                 </div>
                 )}
 
                 {/* Formatting Section (Overrides) */}
                 {activeModalTab === 'formatting' && (
-                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <Label className="text-base font-medium">Bold</Label>
-                      <p className="text-sm text-slate-500">We will bold important keywords in your article.</p>
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="flex items-center justify-between bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)] group">
+                    <div className="space-y-2 pr-6">
+                      <Label className="text-xl font-black tracking-tight text-slate-800 flex items-center">
+                        <span className="bg-emerald-100 text-emerald-600 p-2 rounded-xl mr-3 group-hover:bg-emerald-500 group-hover:text-white transition-colors"><Type className="w-5 h-5"/></span>
+                        Bold Emphasis
+                      </Label>
+                      <p className="text-sm font-bold text-slate-400 pl-14">We will bold important keywords in your article automatically.</p>
                     </div>
                     <Switch 
+                      className="scale-150 data-[state=checked]:bg-emerald-500 mr-2"
                       checked={editingItem?.overrides?.formattingBold !== undefined ? editingItem.overrides.formattingBold : true}
                       onCheckedChange={(checked) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), formattingBold: checked}} : null)}
                     />
                   </div>
                   
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <Label className="text-base font-medium">Italics</Label>
-                      <p className="text-sm text-slate-500">We will use italics for subtle emphasis in your article.</p>
+                  <div className="flex items-center justify-between bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)] group">
+                    <div className="space-y-2 pr-6">
+                      <Label className="text-xl font-black tracking-tight text-slate-800 flex items-center">
+                        <span className="bg-blue-100 text-blue-600 p-2 rounded-xl mr-3 group-hover:bg-blue-500 group-hover:text-white transition-colors"><Type className="w-5 h-5 italic"/></span>
+                        Italics
+                      </Label>
+                      <p className="text-sm font-bold text-slate-400 pl-14">We will use italics for subtle emphasis in your article.</p>
                     </div>
                     <Switch 
+                      className="scale-150 data-[state=checked]:bg-blue-500 mr-2"
                       checked={editingItem?.overrides?.formattingItalics !== undefined ? editingItem.overrides.formattingItalics : true}
                       onCheckedChange={(checked) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), formattingItalics: checked}} : null)}
                     />
                   </div>
 
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <Label className="text-base font-medium">Tables</Label>
-                      <p className="text-sm text-slate-500">If appropriate, we'll include tables in your article.</p>
+                  <div className="flex items-center justify-between bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)] group">
+                    <div className="space-y-2 pr-6">
+                      <Label className="text-xl font-black tracking-tight text-slate-800 flex items-center">
+                        <span className="bg-purple-100 text-purple-600 p-2 rounded-xl mr-3 group-hover:bg-purple-500 group-hover:text-white transition-colors"><Layout className="w-5 h-5"/></span>
+                        Tables
+                      </Label>
+                      <p className="text-sm font-bold text-slate-400 pl-14">If appropriate, we'll include tables in your article.</p>
                     </div>
                     <Switch 
+                      className="scale-150 data-[state=checked]:bg-purple-500 mr-2"
                       checked={editingItem?.overrides?.formattingTables !== undefined ? editingItem.overrides.formattingTables : true}
                       onCheckedChange={(checked) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), formattingTables: checked}} : null)}
                     />
                   </div>
 
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <Label className="text-base font-medium">Quotes</Label>
-                      <p className="text-sm text-slate-500">If appropriate, we'll include quotes/tips/recommendations in your article.</p>
+                  <div className="flex items-center justify-between bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)] group">
+                    <div className="space-y-2 pr-6">
+                      <Label className="text-xl font-black tracking-tight text-slate-800 flex items-center">
+                        <span className="bg-rose-100 text-rose-600 p-2 rounded-xl mr-3 group-hover:bg-rose-500 group-hover:text-white transition-colors"><AlignLeft className="w-5 h-5"/></span>
+                        Quotes
+                      </Label>
+                      <p className="text-sm font-bold text-slate-400 pl-14">If appropriate, we'll include quotes/tips/recommendations in your article.</p>
                     </div>
                     <Switch 
+                      className="scale-150 data-[state=checked]:bg-rose-500 mr-2"
                       checked={editingItem?.overrides?.formattingQuotes !== undefined ? editingItem.overrides.formattingQuotes : true}
                       onCheckedChange={(checked) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), formattingQuotes: checked}} : null)}
                     />
                   </div>
 
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <Label className="text-base font-medium">Lists</Label>
-                      <p className="text-sm text-slate-500">If appropriate, we'll include bulleted or numbered lists in your article.</p>
+                  <div className="flex items-center justify-between bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)] group">
+                    <div className="space-y-2 pr-6">
+                      <Label className="text-xl font-black tracking-tight text-slate-800 flex items-center">
+                        <span className="bg-amber-100 text-amber-600 p-2 rounded-xl mr-3 group-hover:bg-amber-500 group-hover:text-white transition-colors"><List className="w-5 h-5"/></span>
+                        Lists
+                      </Label>
+                      <p className="text-sm font-bold text-slate-400 pl-14">If appropriate, we'll include bulleted or numbered lists in your article.</p>
                     </div>
                     <Switch 
+                      className="scale-150 data-[state=checked]:bg-amber-500 mr-2"
                       checked={editingItem?.overrides?.formattingLists !== undefined ? editingItem.overrides.formattingLists : true}
                       onCheckedChange={(checked) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), formattingLists: checked}} : null)}
                     />
                   </div>
 
-                  <div className="space-y-3">
-                    <Label className="text-base font-medium">Heading letter case</Label>
+                  <div className="space-y-6 pt-4 bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white">
+                    <Label className="text-xl font-black tracking-tight text-slate-800">Heading letter case</Label>
                     <Select 
                       value={editingItem?.overrides?.headingCase || "title"} 
                       onValueChange={(val) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), headingCase: val}} : null)}>
-                      <SelectTrigger className="py-6 rounded-xl text-base"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="title">Title Case</SelectItem>
-                        <SelectItem value="sentence">Sentence case</SelectItem>
-                        <SelectItem value="lower">lower case</SelectItem>
+                      <SelectTrigger className="h-20 px-8 rounded-[1.75rem] text-xl bg-white border-0 hover:bg-slate-50 transition-all shadow-[inset_0_2px_15px_rgba(0,0,0,0.02)] focus:ring-4 focus:ring-emerald-500/20 font-black text-slate-800"><SelectValue /></SelectTrigger>
+                      <SelectContent className="rounded-3xl border border-white/60 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)] p-3 bg-white/90 backdrop-blur-xl">
+                        <SelectItem value="title" className="rounded-2xl py-4 px-4 text-lg cursor-pointer focus:bg-emerald-50 focus:text-emerald-700 font-bold transition-colors">Title Case</SelectItem>
+                        <SelectItem value="sentence" className="rounded-2xl py-4 px-4 text-lg cursor-pointer focus:bg-emerald-50 focus:text-emerald-700 font-bold transition-colors">Sentence case</SelectItem>
+                        <SelectItem value="lower" className="rounded-2xl py-4 px-4 text-lg cursor-pointer focus:bg-emerald-50 focus:text-emerald-700 font-bold transition-colors">lower case</SelectItem>
                       </SelectContent>
                     </Select>
-                    <p className="text-sm text-slate-500">
-                      Change option to see how it affects the example:<br/>
-                      How to Build a Website for Your Small Business in New York
-                    </p>
+                    <div className="bg-white/80 p-6 rounded-[1.5rem] border border-white shadow-sm">
+                      <p className="text-sm font-bold text-slate-400 mb-2">Preview:</p>
+                      <p className="text-xl font-black text-slate-800">
+                        {editingItem?.overrides?.headingCase === 'sentence' ? 'How to build a website for your small business in new york' : 
+                         editingItem?.overrides?.headingCase === 'lower' ? 'how to build a website for your small business in new york' : 
+                         'How to Build a Website for Your Small Business in New York'}
+                      </p>
+                    </div>
                   </div>
                 </div>
                 )}
 
                 {/* Outline Section (Overrides) */}
                 {activeModalTab === 'outline' && (
-                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="bg-slate-50 border border-slate-100 p-4 rounded-xl flex items-start space-x-3">
-                    <div className="bg-purple-600 rounded-full p-1 text-white shrink-0 mt-0.5">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-                    </div>
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-base font-medium">Customize your article structure</Label>
-                        <Button variant="ghost" onClick={() => alert('Generative feature is coming soon!')} className="text-purple-600 font-semibold h-auto p-0 hover:bg-transparent hover:text-purple-700">
-                          <Sparkles className="w-4 h-4 mr-2"/> Generate Outline
-                        </Button>
+                <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+                    <div className="flex items-start space-x-5">
+                      <div className="bg-emerald-100 rounded-[1.25rem] p-4 text-emerald-600 shrink-0 shadow-[inset_0_2px_10px_rgba(0,0,0,0.05)]">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
                       </div>
-                      <p className="text-sm text-slate-500">If you leave this blank, the AI will automatically generate an outline later.</p>
+                      <div className="space-y-2">
+                        <Label className="text-xl font-black tracking-tight text-slate-800">Customize Article Structure</Label>
+                        <p className="text-sm font-bold text-slate-400">Leave blank to let AI automatically generate the perfect outline.</p>
+                      </div>
                     </div>
+                    <Button variant="ghost" onClick={() => alert('Generative feature is coming soon!')} className="text-emerald-600 font-black text-sm h-14 px-8 rounded-[1.25rem] hover:bg-emerald-50 hover:text-emerald-700 bg-white shadow-sm border border-emerald-50 transition-all shrink-0">
+                      <Sparkles className="w-5 h-5 mr-3"/> Auto Generate
+                    </Button>
                   </div>
                   
-                  <InlineTagInput 
-                    tags={editingItem?.overrides?.outline || []} 
-                    setTags={(tags) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), outline: tags}} : null)} 
-                    placeholder="Type a heading and hit Enter" 
-                    buttonText="Add Heading"
-                    maxTags={20}
-                  />
-                </div>
-                )}
-
-                {/* Knowledge Section (Overrides) */}
-                {activeModalTab === 'knowledge' && (
-                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div 
-                    onClick={() => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), knowledgeMode: 'web'}} : null)}
-                    className={`border rounded-2xl p-6 flex items-start space-x-4 cursor-pointer ${editingItem?.overrides?.knowledgeMode === 'web' || !editingItem?.overrides?.knowledgeMode ? 'border-purple-600 bg-purple-50/10' : 'border-slate-200 hover:border-slate-300'}`}>
-                    <div className="pt-1">
-                      <div className={`w-5 h-5 rounded-full ${editingItem?.overrides?.knowledgeMode === 'web' || !editingItem?.overrides?.knowledgeMode ? 'border-4 border-purple-600' : 'border border-slate-300'} bg-white`}></div>
-                    </div>
-                    <div>
-                      <Label className="text-base font-medium cursor-pointer">Connect to Web</Label>
-                      <p className="text-sm text-slate-500 mt-1">We'll search on Google for similar topics to generate up-to-date content.</p>
-                    </div>
-                  </div>
-
-                  <div 
-                    onClick={() => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), knowledgeMode: 'base'}} : null)}
-                    className={`border rounded-2xl p-6 flex flex-col space-y-4 cursor-pointer ${editingItem?.overrides?.knowledgeMode === 'base' ? 'border-purple-600 bg-purple-50/10' : 'border-slate-200 hover:border-slate-300'}`}>
-                    <div className="flex items-start space-x-4">
-                      <div className="pt-1">
-                        <div className={`w-5 h-5 rounded-full ${editingItem?.overrides?.knowledgeMode === 'base' ? 'border-4 border-purple-600' : 'border border-slate-300'} bg-white`}></div>
-                      </div>
-                      <div>
-                        <Label className="text-base font-medium cursor-pointer">Use Knowledge Base</Label>
-                        <p className="text-sm text-slate-500 mt-1">We'll generate content inspired by the knowledge base's assets.</p>
-                      </div>
-                    </div>
-                    <div className="pl-9 w-full">
-                      <Select disabled>
-                        <SelectTrigger className="py-6 rounded-xl text-base text-slate-400 bg-slate-50"><SelectValue placeholder="Coming soon!" /></SelectTrigger>
-                        <SelectContent>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div 
-                    onClick={() => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), knowledgeMode: 'none'}} : null)}
-                    className={`border rounded-2xl p-6 flex items-start space-x-4 cursor-pointer ${editingItem?.overrides?.knowledgeMode === 'none' ? 'border-purple-600 bg-purple-50/10' : 'border-slate-200 hover:border-slate-300'}`}>
-                    <div className="pt-1">
-                      <div className={`w-5 h-5 rounded-full ${editingItem?.overrides?.knowledgeMode === 'none' ? 'border-4 border-purple-600' : 'border border-slate-300'} bg-white`}></div>
-                    </div>
-                    <div>
-                      <Label className="text-base font-medium cursor-pointer">No Extra Knowledge</Label>
-                      <p className="text-sm text-slate-500 mt-1">We'll not provide the AI with any external knowledge.</p>
-                    </div>
+                  <div className="bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white">
+                    <InlineTagInput 
+                      tags={editingItem?.overrides?.outline || []} 
+                      setTags={(tags) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), outline: tags}} : null)} 
+                      placeholder="e.g. Introduction to the Topic..." 
+                      buttonText="Add Heading"
+                      maxTags={20}
+                    />
                   </div>
                 </div>
                 )}
+
+
 
                 {/* Structure Section */}
                 {activeModalTab === 'structure' && (
-                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="space-y-3">
-                    <Label className="text-base font-medium">Call-To-Action</Label>
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white space-y-4 transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)]">
+                    <Label className="text-xl font-black tracking-tight text-slate-800">Call-To-Action</Label>
                     <Input 
                       placeholder="https://mywebsite.com/" 
                       value={editingItem?.overrides?.cta || ''}
                       onChange={(e) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), cta: e.target.value}} : null)}
-                      className="text-base py-6 rounded-xl"
+                      className="h-20 px-8 rounded-[1.75rem] text-xl bg-white border-0 hover:bg-slate-50 transition-all shadow-[inset_0_2px_15px_rgba(0,0,0,0.02)] focus:ring-4 focus:ring-emerald-500/20 font-black text-slate-800"
                     />
-                    <p className="text-sm text-slate-500">We'll add an extra h3 to your articles with a call-to-action to this URL. Leave blank to opt-out.</p>
+                    <p className="text-sm font-bold text-slate-400 pl-4">We'll add an extra h3 to your articles with a call-to-action to this URL. Leave blank to opt-out.</p>
                   </div>
 
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <Label className="text-base font-medium">Key Takeaways</Label>
-                      <p className="text-sm text-slate-500">We'll add this section at the start of each article.</p>
+                  <div className="flex items-center justify-between bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)] group">
+                    <div className="space-y-2 pr-6">
+                      <Label className="text-xl font-black tracking-tight text-slate-800 flex items-center">Key Takeaways</Label>
+                      <p className="text-sm font-bold text-slate-400">We'll add this section at the start of each article.</p>
                     </div>
                     <Switch 
+                      className="scale-150 data-[state=checked]:bg-emerald-500 mr-2"
                       checked={editingItem?.overrides?.keyTakeaways !== undefined ? editingItem.overrides.keyTakeaways : true}
                       onCheckedChange={(checked) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), keyTakeaways: checked}} : null)}
                     />
                   </div>
 
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <Label className="text-base font-medium">Conclusion</Label>
-                      <p className="text-sm text-slate-500">We'll add this section at the end of each article.</p>
+                  <div className="flex items-center justify-between bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)] group">
+                    <div className="space-y-2 pr-6">
+                      <Label className="text-xl font-black tracking-tight text-slate-800 flex items-center">Conclusion</Label>
+                      <p className="text-sm font-bold text-slate-400">We'll add this section at the end of each article.</p>
                     </div>
                     <Switch 
+                      className="scale-150 data-[state=checked]:bg-emerald-500 mr-2"
                       checked={editingItem?.overrides?.conclusion !== undefined ? editingItem.overrides.conclusion : true}
                       onCheckedChange={(checked) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), conclusion: checked}} : null)}
                     />
                   </div>
 
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <Label className="text-base font-medium">FAQs</Label>
-                      <p className="text-sm text-slate-500">We'll add this section at the end of each article.</p>
+                  <div className="flex items-center justify-between bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)] group">
+                    <div className="space-y-2 pr-6">
+                      <Label className="text-xl font-black tracking-tight text-slate-800 flex items-center">FAQs</Label>
+                      <p className="text-sm font-bold text-slate-400">We'll add this section at the end of each article.</p>
                     </div>
                     <Switch 
+                      className="scale-150 data-[state=checked]:bg-emerald-500 mr-2"
                       checked={editingItem?.overrides?.faqs !== undefined ? editingItem.overrides.faqs : true}
                       onCheckedChange={(checked) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), faqs: checked}} : null)}
                     />
                   </div>
 
-                  <div className="space-y-3">
-                    <Label className="text-base font-medium">Article Size</Label>
+                  <div className="bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white space-y-4 transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)]">
+                    <Label className="text-xl font-black tracking-tight text-slate-800">Article Size</Label>
                     <Select 
                       value={editingItem?.overrides?.articleSize || "medium"} 
                       onValueChange={(val) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), articleSize: val}} : null)}>
-                      <SelectTrigger className="py-6 rounded-xl text-base"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="small">Small (3-5 headings)</SelectItem>
-                        <SelectItem value="medium">Medium (5-8 headings)</SelectItem>
-                        <SelectItem value="large">Large (8+ headings)</SelectItem>
+                      <SelectTrigger className="h-20 px-8 rounded-[1.75rem] text-xl bg-white border-0 hover:bg-slate-50 transition-all shadow-[inset_0_2px_15px_rgba(0,0,0,0.02)] focus:ring-4 focus:ring-emerald-500/20 font-black text-slate-800"><SelectValue /></SelectTrigger>
+                      <SelectContent className="rounded-3xl border border-white/60 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)] p-3 bg-white/90 backdrop-blur-xl">
+                        <SelectItem value="small" className="rounded-2xl py-4 px-4 text-lg cursor-pointer focus:bg-emerald-50 focus:text-emerald-700 font-bold transition-colors">Small (3-5 headings)</SelectItem>
+                        <SelectItem value="medium" className="rounded-2xl py-4 px-4 text-lg cursor-pointer focus:bg-emerald-50 focus:text-emerald-700 font-bold transition-colors">Medium (5-8 headings)</SelectItem>
+                        <SelectItem value="large" className="rounded-2xl py-4 px-4 text-lg cursor-pointer focus:bg-emerald-50 focus:text-emerald-700 font-bold transition-colors">Large (8+ headings)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -2338,12 +2193,12 @@ export default function CampaignSetup() {
 
                 {/* Internal Linking Section */}
                 {activeModalTab === 'internal-linking' && (
-                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <Label className="text-base font-medium">Sitemaps <span className="text-slate-400 font-normal">(Optional)</span></Label>
-                      <Button variant="ghost" onClick={() => alert('Sitemap crawl feature is coming soon!')} className="text-purple-600 font-semibold h-auto p-0 hover:bg-transparent hover:text-purple-700">
-                        <SearchCode className="w-4 h-4 mr-2"/> Find Sitemap
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white space-y-4 transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)]">
+                    <div className="flex justify-between items-center mb-6">
+                      <Label className="text-xl font-black tracking-tight text-slate-800">Sitemaps <span className="text-slate-400 font-bold ml-2">(Optional)</span></Label>
+                      <Button variant="ghost" onClick={() => alert('Sitemap crawl feature is coming soon!')} className="text-emerald-600 bg-emerald-50 rounded-2xl font-bold h-12 px-6 hover:bg-emerald-100 hover:text-emerald-700 transition-colors">
+                        <SearchCode className="w-5 h-5 mr-2"/> Find Sitemap
                       </Button>
                     </div>
                     <DynamicInputList 
@@ -2352,86 +2207,93 @@ export default function CampaignSetup() {
                       placeholder="https://example.com/sitemap.xml" 
                       buttonText="Add Sitemap"
                     />
-                    <p className="text-sm text-slate-500 pt-2">Add sitemaps to include internal links from your website.<br/>Use commas , to include multiple patterns.</p>
-                    <p className="text-sm text-purple-600 underline cursor-pointer pt-2" onClick={() => alert('Test & Preview Links feature is coming soon!')}>Test & Preview Links</p>
+                    <div className="pt-4">
+                      <p className="text-sm font-bold text-slate-400">Add sitemaps to include internal links from your website.<br/>Use commas , to include multiple patterns.</p>
+                      <p className="text-sm font-black text-emerald-600 underline cursor-pointer pt-2 hover:text-emerald-700 transition-colors" onClick={() => alert('Test & Preview Links feature is coming soon!')}>Test & Preview Links</p>
+                    </div>
                   </div>
 
-                  <div className="space-y-4 pt-4">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-base font-medium">Links per H2</Label>
-                      <span className="text-xs font-semibold text-purple-600 bg-purple-50 px-2 py-1 rounded-md">{editingItem?.overrides?.linksPerH2 !== undefined ? editingItem.overrides.linksPerH2 : 2} Links</span>
+                  <div className="bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white space-y-4 transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)]">
+                    <div className="flex items-center justify-between mb-4">
+                      <Label className="text-xl font-black tracking-tight text-slate-800">Links per H2</Label>
+                      <span className="text-sm font-black text-emerald-600 bg-emerald-50 px-4 py-2 rounded-xl">{editingItem?.overrides?.linksPerH2 !== undefined ? editingItem.overrides.linksPerH2 : 2} Links</span>
                     </div>
-                    <div className="pt-2 pb-2">
+                    <div className="pt-4 pb-4">
                        <Slider 
                         value={[editingItem?.overrides?.linksPerH2 !== undefined ? editingItem.overrides.linksPerH2 : 2]} 
                         onValueChange={(val: any) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), linksPerH2: val[0]}} : null)}
                         max={5} min={0} step={1} 
-                        className="[&_[role=slider]]:bg-purple-600 [&_[role=slider]]:border-purple-600 [&_.bg-primary]:bg-purple-600"
+                        className="py-2 [&_[role=slider]]:bg-emerald-500 [&_[role=slider]]:border-4 [&_[role=slider]]:border-white [&_[role=slider]]:w-8 [&_[role=slider]]:h-8 [&_[role=slider]]:shadow-lg [&_.bg-primary]:bg-emerald-500"
                       />
                     </div>
-                    <p className="text-sm text-slate-500">Links will be balanced between Internal Links and External Links.</p>
+                    <p className="text-sm font-bold text-slate-400">Links will be balanced between Internal Links and External Links.</p>
                   </div>
                 </div>
                 )}
 
                 {/* External Linking Section */}
                 {activeModalTab === 'external-linking' && (
-                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="space-y-3">
-                    <Label className="text-base font-medium">Include Links</Label>
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white space-y-4 transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)]">
+                    <Label className="text-xl font-black tracking-tight text-slate-800">Include Links</Label>
                     <DynamicInputList 
                       items={editingItem?.overrides?.includeLinks || []} 
                       setItems={(items) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), includeLinks: items}} : null)} 
                       placeholder="https://example.com" 
                       buttonText="Add Link"
                     />
-                    <p className="text-sm text-slate-500">We'll include these exact links in the article.</p>
+                    <p className="text-sm font-bold text-slate-400">We'll include these exact links in the article.</p>
                   </div>
 
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <Label className="text-base font-medium">Automatic External Links</Label>
-                      <p className="text-sm text-slate-500">We'll scrape the internet for relevant articles in your niche & language.</p>
+                  <div className="flex items-center justify-between bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)] group">
+                    <div className="space-y-2 pr-6">
+                      <Label className="text-xl font-black tracking-tight text-slate-800 flex items-center">Automatic External Links</Label>
+                      <p className="text-sm font-bold text-slate-400">We'll scrape the internet for relevant articles in your niche & language.</p>
                     </div>
                     <Switch 
+                      className="scale-150 data-[state=checked]:bg-emerald-500 mr-2"
                       checked={editingItem?.overrides?.autoExternalLinks !== undefined ? editingItem.overrides.autoExternalLinks : true}
                       onCheckedChange={(checked) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), autoExternalLinks: checked}} : null)}
                     />
                   </div>
 
-                  <div className="space-y-3 pt-2">
-                    <Label className="text-base font-medium">Include External Sources</Label>
+                  <div className="bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white space-y-4 transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)]">
+                    <Label className="text-xl font-black tracking-tight text-slate-800">Include External Sources</Label>
                     <DynamicInputList 
                       items={editingItem?.overrides?.includeSources || []} 
                       setItems={(items) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), includeSources: items}} : null)} 
                       placeholder="example.com" 
                       buttonText="Add Website"
                     />
-                    <p className="text-sm text-slate-500">ONLY links from these websites will be included. Leave blank to include ALL websites.</p>
+                    <p className="text-sm font-bold text-slate-400">ONLY links from these websites will be included. Leave blank to include ALL websites.</p>
                   </div>
 
-                  <div className="space-y-3 pt-2">
-                    <Label className="text-base font-medium">Exclude External Sources</Label>
+                  <div className="bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white space-y-4 transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)]">
+                    <Label className="text-xl font-black tracking-tight text-slate-800">Exclude External Sources</Label>
                     <DynamicInputList 
                       items={editingItem?.overrides?.excludeSources || []} 
                       setItems={(items) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), excludeSources: items}} : null)} 
                       placeholder="competitor.com" 
                       buttonText="Add Website"
                     />
-                    <p className="text-sm text-slate-500">No links will be placed from these websites.</p>
+                    <p className="text-sm font-bold text-slate-400">No links will be placed from these websites.</p>
                   </div>
                 </div>
                 )}
 
                 {/* Videos Section */}
                 {activeModalTab === 'videos' && (
-                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <Label className="text-base font-medium">Automate Youtube Videos</Label>
-                      <p className="text-sm text-slate-500">We'll automatically find and include relevant YouTube videos.</p>
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="flex items-center justify-between bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)] group">
+                    <div className="space-y-2 pr-6">
+                      <Label className="text-xl font-black tracking-tight text-slate-800 flex items-center">
+                        <span className="bg-red-100 text-red-600 p-2 rounded-xl mr-3 group-hover:bg-red-500 group-hover:text-white transition-colors"><Youtube className="w-5 h-5"/></span>
+                        Automate Youtube Videos
+                      </Label>
+                      <p className="text-sm font-bold text-slate-400 pl-14">We'll automatically find and include relevant YouTube videos.</p>
                     </div>
                     <Switch 
+                      className="scale-150 data-[state=checked]:bg-red-500 mr-2"
                       checked={editingItem?.overrides?.autoYoutube !== undefined ? editingItem.overrides.autoYoutube : false}
                       onCheckedChange={(checked) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), autoYoutube: checked}} : null)}
                     />
@@ -2441,73 +2303,74 @@ export default function CampaignSetup() {
 
                 {/* Images Section (Overrides) */}
                 {activeModalTab === 'images' && (
-                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <Label className="text-base font-medium">Featured Image</Label>
-                      <p className="text-sm text-slate-500">Enable to add a featured image to your article.</p>
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="flex items-center justify-between bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)] group">
+                    <div className="space-y-2 pr-6">
+                      <Label className="text-xl font-black tracking-tight text-slate-800 flex items-center">Featured Image</Label>
+                      <p className="text-sm font-bold text-slate-400">Enable to add a featured image to your article.</p>
                     </div>
                     <Switch 
+                      className="scale-150 data-[state=checked]:bg-emerald-500 mr-2"
                       checked={editingItem?.overrides?.coverToggle !== undefined ? editingItem.overrides.coverToggle : coverToggle} 
                       onCheckedChange={(checked) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), coverToggle: checked}} : null)} 
                     />
                   </div>
 
-                  <div className="space-y-3 pt-2">
-                    <Label className="text-base font-medium">Image Provider</Label>
+                  <div className="bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white space-y-4 transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)]">
+                    <Label className="text-xl font-black tracking-tight text-slate-800">Image Provider</Label>
                     <Select 
                       value={editingItem?.overrides?.imageProvider || "ai_1"} 
                       onValueChange={(val) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), imageProvider: val}} : null)}>
-                      <SelectTrigger className="py-6 rounded-xl text-base"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="ai_1">AI images (1 credits per image)</SelectItem>
+                      <SelectTrigger className="h-20 px-8 rounded-[1.75rem] text-xl bg-white border-0 hover:bg-slate-50 transition-all shadow-[inset_0_2px_15px_rgba(0,0,0,0.02)] focus:ring-4 focus:ring-emerald-500/20 font-black text-slate-800"><SelectValue /></SelectTrigger>
+                      <SelectContent className="rounded-3xl border border-white/60 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)] p-3 bg-white/90 backdrop-blur-xl">
+                        <SelectItem value="ai_1" className="rounded-2xl py-4 px-4 text-lg cursor-pointer focus:bg-emerald-50 focus:text-emerald-700 font-bold transition-colors">AI images (1 credits per image)</SelectItem>
                       </SelectContent>
                     </Select>
-                    <p className="text-sm text-slate-500">Use AI images for best results. All images will include an alt text.</p>
+                    <p className="text-sm font-bold text-slate-400 pl-4">Use AI images for best results. All images will include an alt text.</p>
                   </div>
 
-                  <div className="bg-slate-50 border border-slate-100 p-4 rounded-xl flex items-start space-x-3">
-                    <div className="bg-purple-600 rounded-full w-5 h-5 flex items-center justify-center text-white shrink-0 mt-0.5">
-                      <span className="text-xs font-bold leading-none">i</span>
+                  <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-100 p-8 rounded-[2rem] flex items-start space-x-6 shadow-sm">
+                    <div className="bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl w-12 h-12 flex items-center justify-center text-white shrink-0 shadow-lg">
+                      <Sparkles className="w-6 h-6"/>
                     </div>
-                    <div className="flex-1 space-y-1">
-                      <Label className="text-base font-medium text-slate-900 block">Premium AI images available</Label>
-                      <p className="text-sm text-slate-500 leading-relaxed">
+                    <div className="flex-1 space-y-2 pt-1">
+                      <Label className="text-xl font-black text-amber-900 block tracking-tight">Premium AI images available</Label>
+                      <p className="text-base text-amber-700/80 font-medium leading-relaxed">
                         In order to turn on premium AI images, please go to your account settings. They're 5x as expensive, but the quality is much better.
                       </p>
-                      <p className="text-sm text-purple-600 font-medium underline cursor-pointer pt-1">Go to account settings →</p>
+                      <p className="text-base text-amber-700 font-black hover:text-amber-900 transition-colors cursor-pointer pt-2">Go to account settings &rarr;</p>
                     </div>
                   </div>
 
-                  <div className="space-y-3 pt-2">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-base font-medium">Number of In-Article Images</Label>
-                      <span className="text-xs font-semibold text-purple-600 bg-purple-50 px-2 py-1 rounded-md">{editingItem?.overrides?.inlineCount !== undefined ? editingItem.overrides.inlineCount : inlineCount[0]} ภาพ</span>
+                  <div className="bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white space-y-4 transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)]">
+                    <div className="flex items-center justify-between mb-4">
+                      <Label className="text-xl font-black tracking-tight text-slate-800">Number of In-Article Images</Label>
+                      <span className="text-sm font-black text-emerald-600 bg-emerald-50 px-4 py-2 rounded-xl">{editingItem?.overrides?.inlineCount !== undefined ? editingItem.overrides.inlineCount : inlineCount[0]} ภาพ</span>
                     </div>
-                    <div className="pt-2 pb-2">
+                    <div className="pt-4 pb-4">
                       <Slider 
                         value={[editingItem?.overrides?.inlineCount !== undefined ? editingItem.overrides.inlineCount : inlineCount[0]]} 
                         onValueChange={(val: any) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), inlineCount: val[0]}} : null)} 
                         max={5} min={0} step={1} 
-                        className="py-2 [&_[role=slider]]:bg-purple-600 [&_[role=slider]]:border-purple-600 [&_.bg-primary]:bg-purple-600" 
+                        className="py-2 [&_[role=slider]]:bg-emerald-500 [&_[role=slider]]:border-4 [&_[role=slider]]:border-white [&_[role=slider]]:w-8 [&_[role=slider]]:h-8 [&_[role=slider]]:shadow-lg [&_.bg-primary]:bg-emerald-500" 
                       />
                     </div>
-                    <p className="text-sm text-slate-500">We'll sprinkle the images through-out the article.</p>
+                    <p className="text-sm font-bold text-slate-400">We'll sprinkle the images through-out the article.</p>
                   </div>
 
-                  <div className="space-y-3 pt-2">
-                    <Label className="text-base font-medium">Extra Custom Styling</Label>
+                  <div className="bg-white/50 backdrop-blur-md p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white space-y-4 transition-all duration-300 hover:shadow-[0_15px_40px_rgb(0,0,0,0.08)]">
+                    <Label className="text-xl font-black tracking-tight text-slate-800">Extra Custom Styling</Label>
                     <Input 
                       placeholder="photographic image" 
                       value={editingItem?.overrides?.imageStyle || ""}
                       onChange={(e) => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), imageStyle: e.target.value}} : null)}
-                      className="text-base py-6 rounded-xl"
+                      className="h-20 px-8 rounded-[1.75rem] text-xl bg-white border-0 hover:bg-slate-50 transition-all shadow-[inset_0_2px_15px_rgba(0,0,0,0.02)] focus:ring-4 focus:ring-emerald-500/20 font-black text-slate-800"
                     />
-                    <div className="flex items-center space-x-2 text-sm">
-                      <span className="text-slate-500">Examples:</span>
-                      <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-md cursor-pointer hover:bg-slate-200" onClick={() => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), imageStyle: "black and white"}} : null)}>black and white</span>
-                      <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-md cursor-pointer hover:bg-slate-200" onClick={() => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), imageStyle: "illustrative"}} : null)}>illustrative</span>
-                      <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-md cursor-pointer hover:bg-slate-200" onClick={() => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), imageStyle: "anime"}} : null)}>anime</span>
+                    <div className="flex items-center gap-3 text-sm flex-wrap pt-2 pl-4">
+                      <span className="text-slate-400 font-bold">Examples:</span>
+                      <span className="bg-white border border-slate-200 text-slate-600 font-bold px-4 py-2 rounded-xl cursor-pointer hover:bg-slate-50 hover:text-emerald-600 transition-colors shadow-sm" onClick={() => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), imageStyle: "black and white"}} : null)}>black and white</span>
+                      <span className="bg-white border border-slate-200 text-slate-600 font-bold px-4 py-2 rounded-xl cursor-pointer hover:bg-slate-50 hover:text-emerald-600 transition-colors shadow-sm" onClick={() => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), imageStyle: "illustrative"}} : null)}>illustrative</span>
+                      <span className="bg-white border border-slate-200 text-slate-600 font-bold px-4 py-2 rounded-xl cursor-pointer hover:bg-slate-50 hover:text-emerald-600 transition-colors shadow-sm" onClick={() => setEditingItem(prev => prev ? {...prev, overrides: {...(prev.overrides || {}), imageStyle: "anime"}} : null)}>anime</span>
                     </div>
                   </div>
                 </div>
@@ -2516,13 +2379,7 @@ export default function CampaignSetup() {
             </div>
           </div>
 
-          <DialogFooter className="px-6 py-4 border-t border-slate-200 bg-white sm:justify-between items-center">
-            <Button variant="outline" onClick={revertToTemplate}>Revert to Template</Button>
-            <div className="space-x-2">
-              <Button variant="ghost" onClick={() => setEditingItem(null)}>Cancel</Button>
-              <Button className="bg-purple-600 hover:bg-purple-700 text-white" onClick={saveOverrides}>Save Changes</Button>
-            </div>
-          </DialogFooter>
+
         </DialogContent>
       </Dialog>
 
@@ -2533,20 +2390,30 @@ export default function CampaignSetup() {
           <DialogHeader className="flex flex-row items-center justify-between pb-2 border-b border-slate-100">
             <DialogTitle className="text-xl">ผลลัพธ์บทความ: {generatedArticle?.title}</DialogTitle>
             <div className="flex items-center gap-2">
-               <Button variant="ghost" size="icon" onClick={() => navigate(`/article/${generatedArticle?.id}`)} className="text-slate-400 hover:text-slate-900">
+               <Button variant="ghost" size="icon" onClick={async () => {
+                 try {
+                   let aid = generatedArticle?.id;
+                   const saved = await saveArticle(generatedArticle.title, generatedArticle.content, 'Completed', aid?.startsWith('temp_') ? undefined : aid, generatedArticle.keyword, generatedArticle.language);
+                   if (saved) {
+                     setGeneratedArticles(prev => prev.map(a => a.id === generatedArticle.id ? { ...a, id: saved.id } : a));
+                     navigate(`/article/${saved.id}`);
+                   }
+                 } catch (e) { console.error('Save before open failed:', e); }
+               }} className="text-slate-500 hover:text-slate-900" title="เปิดบทความ">
                   <ExternalLink className="w-5 h-5" />
                </Button>
             </div>
           </DialogHeader>
-          <div className="flex-1 overflow-y-auto mt-4 p-8 border border-slate-200 rounded-lg bg-white shadow-inner" id="preview-article-content">
+          <div className="flex-1 overflow-y-auto mt-4 p-8 border border-slate-100 rounded-lg bg-white shadow-inner" id="preview-article-content">
             <div className="markdown-body max-w-none">
               <ReactMarkdown 
                 remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeRaw]}
                 components={{
                   img: MarkdownImage
                 }}
               >
-                {generatedArticle?.markdown || ''}
+                {generatedArticle?.content || generatedArticle?.markdown || ''}
               </ReactMarkdown>
             </div>
           </div>
@@ -2554,7 +2421,19 @@ export default function CampaignSetup() {
             <span className="text-xs text-slate-500">* ข้อมูลนี้สามารถตั้งค่าให้เซฟลงฐานข้อมูลหรืออัปโหลดขึ้นเว็บอัตโนมัติได้ภายหลัง</span>
             <div className="space-x-2">
               <Button variant="outline" onClick={() => setArticleModalOpen(false)}>ปิด</Button>
-              <Button className="bg-purple-600 hover:bg-purple-700 text-white inline-flex items-center gap-2" onClick={() => navigate(`/article/${generatedArticle?.id}`)}>
+              <Button className="bg-emerald-600 hover:bg-emerald-700 text-slate-900 inline-flex items-center gap-2" onClick={async () => {
+                let articleId = generatedArticle?.id;
+                // บันทึกลง DB ทุกครั้งก่อนเปิด เพื่อให้มั่นใจว่ามี content
+                try {
+                  const saved = await saveArticle(generatedArticle.title, generatedArticle.content, 'Completed', articleId?.startsWith('temp_') ? undefined : articleId, generatedArticle.keyword, generatedArticle.language);
+                  if (saved) {
+                    articleId = saved.id;
+                    setGeneratedArticles(prev => prev.map(a => a.id === generatedArticle.id ? { ...a, id: saved.id } : a));
+                  }
+                } catch (e) { console.error('Save before open failed:', e); }
+                setArticleModalOpen(false);
+                navigate(`/article/${articleId}`);
+              }}>
                 Open <ExternalLink className="w-4 h-4" />
               </Button>
               <Button variant="outline" className="hidden sm:inline-flex" onClick={() => {
@@ -2578,6 +2457,7 @@ export default function CampaignSetup() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </AppLayout>
   );
 }

@@ -9,6 +9,8 @@ export interface Article {
   content: string;
   status: ArticleStatus;
   seo_score: number;
+  keyword?: string;
+  language?: string;
   created_at: string;
   updated_at: string;
 }
@@ -48,20 +50,23 @@ export async function fetchArticleById(id: string): Promise<Article | null> {
   return data;
 }
 
-export async function saveArticle(title: string, content: string, status: ArticleStatus = 'Completed', existingId?: string): Promise<Article | null> {
+export async function saveArticle(title: string, content: string, status: ArticleStatus = 'Completed', existingId?: string, keyword?: string, language?: string): Promise<Article | null> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     console.warn('User not logged in, cannot save article to Supabase');
     return null;
   }
 
-  const payload = {
+  const payload: any = {
     user_id: user.id,
     title,
     content,
     status,
     updated_at: new Date().toISOString()
   };
+  
+  if (keyword) payload.keyword = keyword;
+  if (language) payload.language = language;
 
   if (existingId) {
     const { data, error } = await supabase

@@ -139,9 +139,9 @@
 .markdown-body h4 {
   @apply font-bold text-slate-900 mt-8 mb-4 tracking-tight;
 }
-.markdown-body h1 { @apply text-3xl; }
-.markdown-body h2 { @apply text-2xl text-purple-700; }
-.markdown-body h3 { @apply text-xl text-slate-800; }
+.markdown-body h1 { @apply text-2xl; }
+.markdown-body h2 { @apply text-xl text-purple-700; }
+.markdown-body h3 { @apply text-lg text-slate-800; }
 .markdown-body p {
   @apply mb-5 text-[16px] leading-[1.8];
 }

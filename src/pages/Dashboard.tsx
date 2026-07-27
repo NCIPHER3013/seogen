@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { LayoutDashboard, Plus, FileText, User, Sparkles, LogOut, ArrowRight, Activity, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Plus, FileText, User, Sparkles, LogOut, Activity, Menu, X, ArrowRight, BarChart3, Users, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useNavigate, Link } from 'react-router-dom';
 import { Button, buttonVariants } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useAdmin } from '@/hooks/useAdmin';
-import { Shield, Users, BarChart3 } from 'lucide-react';
 import { fetchUserArticles, Article } from '@/lib/articles';
+import AppLayout from '@/components/AppLayout';
+import { motion } from 'framer-motion';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -18,16 +19,13 @@ export default function Dashboard() {
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user }, error }) => {
-      // Intentionally ignoring network errors to prevent overlays
       if (user) {
         setUser(user);
         loadStats();
       } else {
         navigate('/');
       }
-    }).catch(() => {
-      // Ignore uncaught fetch errors silently
-    });
+    }).catch(() => {});
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
@@ -59,7 +57,6 @@ export default function Dashboard() {
         }
       }
 
-      // Merge and deduplicate
       const merged = [...dbArticles];
       localArticles.forEach(la => {
         if (!merged.find(da => da.id === la.id)) {
@@ -80,171 +77,124 @@ export default function Dashboard() {
     await supabase.auth.signOut();
   };
 
-  if (!user) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
-
   return (
-    <div className="min-h-screen bg-[#fafafa] flex flex-col md:flex-row font-sans text-slate-900">
-      
-      {/* Mobile Topbar */}
-      <div className="md:hidden sticky top-0 left-0 right-0 h-16 bg-slate-900 border-b border-slate-800 z-50 flex items-center justify-between px-4 w-full">
-        <Link to="/dashboard" className="flex items-center gap-2 font-bold text-lg text-white">
-          <Sparkles className="w-5 h-5 text-purple-500" />
-          <span>z.ai<span className="text-purple-500 font-light ml-2">SEO Studio</span></span>
-        </Link>
-        <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-slate-300 hover:text-white">
-          {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </Button>
-      </div>
-
-      {/* Mobile Menu Overlay */}
-      {isMobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 top-16 bg-slate-900 z-40 flex flex-col items-center pt-8 space-y-6">
-          <nav className="flex flex-col items-center space-y-4 w-full px-6">
-            <Link to="/dashboard" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-center gap-3 w-full py-3 text-base font-medium rounded-xl text-white bg-slate-800">
-              <LayoutDashboard className="w-5 h-5" /> แดชบอร์ด
-            </Link>
-            <Link to="/campaign/new" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-center gap-3 w-full py-3 text-base font-medium rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition-colors">
-              <Plus className="w-5 h-5" /> สร้างแคมเปญใหม่
-            </Link>
-            <Link to="/articles" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-center gap-3 w-full py-3 text-base font-medium rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition-colors">
-              <FileText className="w-5 h-5" /> บทความทั้งหมด
-            </Link>
-            {isAdmin && (
-            <Link to="/admin?tab=users" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-center gap-3 w-full py-3 text-base font-medium rounded-xl text-purple-300 hover:text-white bg-purple-600/20">
-              <Users className="w-5 h-5" /> จัดการผู้ใช้
-            </Link>
-            )}
-            {isAdmin && (
-            <Link to="/admin?tab=stats" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-center gap-3 w-full py-3 text-base font-medium rounded-xl text-purple-300 hover:text-white bg-purple-600/20">
-              <BarChart3 className="w-5 h-5" /> สถิติรวม
-            </Link>
-            )}
-          </nav>
-        </div>
-      )}
-
-      {/* Sidebar (Desktop) */}
-      <aside className="w-64 bg-slate-900 text-slate-200 flex-shrink-0 hidden md:flex flex-col h-screen sticky top-0 z-20">
-        <div className="p-6">
-          <Link to="/dashboard" className="flex items-center gap-2 font-bold text-xl text-white mb-8">
-            <Sparkles className="w-6 h-6 text-purple-500" />
-            <span>z.ai<span className="text-purple-500 font-light ml-2">SEO Studio</span></span>
-          </Link>
-          
-          <nav className="space-y-1">
-            <Link to="/dashboard" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md text-white bg-slate-800">
-              <LayoutDashboard className="w-4 h-4" /> แดชบอร์ด
-            </Link>
-            <Link to="/campaign/new" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
-              <Plus className="w-4 h-4" /> สร้างแคมเปญใหม่
-            </Link>
-            <Link to="/articles" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
-              <FileText className="w-4 h-4" /> บทความทั้งหมด
-            </Link>
-            {isAdmin && (
-            <Link to="/admin?tab=users" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md text-purple-300 hover:text-white bg-purple-600/20 transition-colors">
-              <Users className="w-4 h-4" /> จัดการผู้ใช้
-            </Link>
-            )}
-            {isAdmin && (
-            <Link to="/admin?tab=stats" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md text-purple-300 hover:text-white bg-purple-600/20 transition-colors">
-              <BarChart3 className="w-4 h-4" /> สถิติรวม
-            </Link>
-            )}
-          </nav>
-        </div>
-        <div className="mt-auto p-4 border-t border-slate-800">
-          <div className="flex items-center gap-3 px-3 py-2 text-sm rounded-md hover:bg-slate-800 cursor-pointer group relative">
-            <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center">
-              <User className="w-4 h-4" />
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <p className="text-sm font-medium text-white truncate">{user.email}</p>
-              <p className="text-xs text-slate-400 truncate">{isAdmin ? 'ผู้ดูแลระบบ (Admin)' : 'ผู้ใช้งาน'}</p>
-            </div>
-            <button onClick={handleSignOut} className="absolute right-2 opacity-0 group-hover:opacity-100 p-2 hover:bg-slate-700 rounded-md transition-opacity">
-              <LogOut className="w-4 h-4 text-red-400" />
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main Content Area */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className="h-16 border-b border-slate-200 bg-white flex items-center px-6 justify-between shrink-0">
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <span className="font-semibold text-slate-800">แดชบอร์ด</span>
-          </div>
-          <div className="flex items-center gap-4">
-             <Button variant="outline" size="sm" onClick={handleSignOut} className="md:hidden">ออกจากระบบ</Button>
-          </div>
-        </header>
-
-        <div className="flex-1 overflow-y-auto p-6 md:p-8">
-          <div className="max-w-6xl mx-auto space-y-8">
+    <AppLayout user={user}>
+      <div className="w-full relative z-10">
+        
+        {/* Hero Section */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+          className="mb-12 relative"
+        >
+          <div className="absolute inset-0 bg-gradient-to-r from-emerald-500 to-teal-400 rounded-[2rem] transform -rotate-1 opacity-20 blur-lg"></div>
+          <div className="relative bg-white border border-slate-100 rounded-[2.5rem] p-8 sm:p-12 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-8 overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-50 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
             
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight mb-2">ยินดีต้อนรับกลับมา!</h1>
-                <p className="text-sm sm:text-base text-slate-500">นี่คือภาพรวมการสร้างเนื้อหาด้วย AI ของคุณ</p>
-              </div>
-              <Link to="/campaign/new" className={buttonVariants({ className: "w-full sm:w-auto bg-purple-600 hover:bg-purple-700 shadow-sm text-white font-medium rounded-lg justify-center py-6 sm:py-2" })}>
-                <Plus className="w-4 h-4 mr-2" /> สร้างแคมเปญใหม่
+            <div className="relative z-10 text-center sm:text-left">
+              <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-none px-4 py-1.5 mb-6 text-sm font-medium inline-flex items-center gap-2">
+                <Sparkles className="w-4 h-4" /> AI Content Generator 
+              </Badge>
+              <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-slate-900 mb-4 leading-tight">
+                เริ่มต้นสร้างเนื้อหา <br/><span className="text-emerald-600">ให้เหนือกว่าคู่แข่ง</span>
+              </h1>
+              <p className="text-lg text-slate-500 max-w-lg mb-8">
+                เขียนบทความ SEO ที่ติดหน้าแรก Google ได้ง่ายๆ ภายในไม่กี่นาทีด้วยระบบ AI ของ SeoCipher
+              </p>
+              
+              <Link to="/campaign/new" className="inline-flex items-center justify-center bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl px-8 py-4 text-lg shadow-[0_0_30px_rgba(16,185,129,0.3)] hover:shadow-[0_0_40px_rgba(16,185,129,0.5)] transition-all hover:-translate-y-1 gap-3">
+                <Plus className="w-6 h-6" /> สร้างแคมเปญใหม่
               </Link>
             </div>
-
-            {/* Metrics */}
-            <div className="grid sm:grid-cols-3 gap-6">
-              <Card className="shadow-[0px_4px_16px_rgba(0,0,0,0.02)] border-slate-100 rounded-2xl">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-slate-500">แคมเปญทั้งหมด</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold text-slate-800">1</div>
-                  <p className="text-xs text-slate-400 mt-1">แคมเปญเริ่มต้นในระบบ</p>
-                </CardContent>
-              </Card>
-              <Card className="shadow-[0px_4px_16px_rgba(0,0,0,0.02)] border-slate-100 rounded-2xl">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-slate-500">บทความที่สร้างเสร็จแล้ว</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold text-slate-900">{stats.completed}</div>
-                  <p className="text-xs text-slate-400 mt-1">เนื้อหาทั้งหมดในระบบ</p>
-                </CardContent>
-              </Card>
-              <Card className="shadow-[0px_4px_16px_rgba(0,0,0,0.02)] border-slate-100 rounded-2xl">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-slate-500">อัปโหลดไปยังเว็บแล้ว</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold text-slate-800">0</div>
-                  <p className="text-xs text-slate-400 mt-1">บทความที่เผยแพร่อัตโนมัติ</p>
-                </CardContent>
-              </Card>
+            
+            <div className="relative z-10 hidden md:block">
+               <div className="w-64 h-64 bg-emerald-50 border-8 border-white rounded-[3rem] shadow-xl shadow-emerald-900/5 rotate-6 flex items-center justify-center">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center">
+                      <FileText className="w-8 h-8 text-emerald-400" />
+                    </div>
+                    <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center">
+                      <BarChart3 className="w-8 h-8 text-teal-400" />
+                    </div>
+                    <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center">
+                      <Activity className="w-8 h-8 text-emerald-500" />
+                    </div>
+                    <div className="w-16 h-16 bg-emerald-600 rounded-2xl shadow-sm flex items-center justify-center">
+                      <Sparkles className="w-8 h-8 text-white" />
+                    </div>
+                  </div>
+               </div>
             </div>
-
-            {/* Recent Activity Table */}
-            <Card className="shadow-[0px_4px_16px_rgba(0,0,0,0.02)] border-slate-100 rounded-2xl">
-              <CardHeader>
-                <CardTitle className="tracking-tight text-slate-800 text-xl font-semibold">กิจกรรมล่าสุด</CardTitle>
-                <CardDescription>บทความใหม่ล่าสุดที่คุณมอบหมายให้ AI สร้าง</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-16 px-4 border border-dashed border-slate-200 rounded-[1.25rem] bg-slate-50 mt-2">
-                   <Activity className="w-10 h-10 text-slate-300 mx-auto mb-4" />
-                   <h3 className="text-lg font-medium text-slate-800 mb-1">ยังไม่มีบทความที่สร้าง</h3>
-                   <p className="text-sm text-slate-500 mb-6 max-w-sm mx-auto">เริ่มสร้างแคมเปญแรกของคุณเพื่อให้ระบบ AI เขียนบทความแล้วจะแสดงขึ้นที่นี่</p>
-                   <Link to="/campaign/new" className={buttonVariants({ variant: "outline", className: "bg-white border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 font-medium" })}>
-                     เพิ่มเป้าหมายคีย์เวิร์ด
-                   </Link>
-                </div>
-              </CardContent>
-            </Card>
-
           </div>
+        </motion.div>
+
+        {/* Bento Grid layout */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+          className="grid grid-cols-1 md:grid-cols-3 gap-6"
+        >
+          {/* Card 1 */}
+          <div className="bg-white border border-slate-100 rounded-[2rem] p-8 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
+               <FileText className="w-24 h-24 text-emerald-600 -rotate-12" />
+            </div>
+            <h3 className="text-slate-500 font-medium mb-2 relative z-10">แคมเปญของคุณ</h3>
+            <div className="text-5xl font-black text-slate-800 mb-4 relative z-10">1</div>
+            <div className="inline-flex items-center gap-1 text-sm font-medium text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full relative z-10">
+              <Activity className="w-4 h-4" /> แคมเปญเริ่มต้น
+            </div>
+          </div>
+
+          {/* Card 2 */}
+          <div className="bg-white border border-slate-100 rounded-[2rem] p-8 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
+               <BarChart3 className="w-24 h-24 text-emerald-600 -rotate-12" />
+            </div>
+            <h3 className="text-slate-500 font-medium mb-2 relative z-10">บทความที่สร้างสำเร็จ</h3>
+            <div className="text-5xl font-black text-slate-800 mb-4 relative z-10">{stats.completed}</div>
+            <div className="inline-flex items-center gap-1 text-sm font-medium text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full relative z-10">
+              <Sparkles className="w-4 h-4" /> เนื้อหาในระบบ
+            </div>
+          </div>
+
+          {/* Card 3 - Uploaded */}
+          <div className="bg-slate-900 border border-slate-800 rounded-[2rem] p-8 shadow-lg shadow-slate-900/20 hover:shadow-xl relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/20 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2"></div>
+            <h3 className="text-slate-400 font-medium mb-2 relative z-10">ส่งออก / อัปโหลด</h3>
+            <div className="text-5xl font-black text-white mb-4 relative z-10">0</div>
+            <div className="inline-flex items-center gap-1 text-sm font-medium text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full relative z-10 border border-emerald-500/20">
+              <ArrowRight className="w-4 h-4" /> รอการส่งออก
+            </div>
+          </div>
+
+          {/* Large Area: Recent Activity */}
+          <div className="md:col-span-3 bg-white border border-slate-100 rounded-[2.5rem] p-8 sm:p-10 shadow-sm mt-2">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">กิจกรรมล่าสุด</h2>
+                <p className="text-slate-500 mt-1">บทความใหม่ล่าสุดที่คุณมอบหมายให้ AI สร้าง</p>
+              </div>
+              <Link to="/articles" className="hidden sm:flex items-center gap-2 text-emerald-600 font-semibold hover:text-emerald-700 hover:bg-emerald-50 px-4 py-2 rounded-xl transition-colors">
+                ดูทั้งหมด <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
+            
+            <div className="text-center py-20 px-4 border-2 border-dashed border-slate-100 rounded-[2rem] bg-slate-50/50">
+                <div className="w-20 h-20 bg-white shadow-sm rounded-3xl mx-auto flex items-center justify-center mb-6">
+                  <Activity className="w-8 h-8 text-slate-300" />
+                </div>
+                <h3 className="text-xl font-semibold text-slate-800 mb-2">ยังไม่มีประวัติการทำงาน</h3>
+                <p className="text-base text-slate-500 mb-8 max-w-md mx-auto">เริ่มต้นแคมเปญแรกของคุณเพื่อให้ระบบ AI เริ่มร่างเนื้อหาคุณภาพสูง</p>
+                <Link to="/campaign/new" className={buttonVariants({ variant: "default", className: "bg-slate-900 hover:bg-slate-800 text-white shadow-md rounded-2xl px-8 h-12 text-base font-semibold" })}>
+                  <Plus className="w-5 h-5 mr-2" /> เริ่มสร้างตอนนี้เลย
+                </Link>
+            </div>
+          </div>
+        </motion.div>
         </div>
-      </main>
-    </div>
+    </AppLayout>
   );
 }
