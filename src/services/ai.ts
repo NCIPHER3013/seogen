@@ -798,6 +798,18 @@ Output the article in Markdown format. Use proper heading tags (H1, H2, H3), bul
     const imageRegex = new RegExp(IMAGE_MARKER_REGEX.source, 'g');
     const matches = [...finalMarkdown.matchAll(imageRegex)];
 
+    // Force the first image to be at the very top if coverToggle is enabled
+    if (config.coverToggle && matches.length > 0) {
+      const firstImageMatch = matches[0][0];
+      const firstImageIndex = finalMarkdown.indexOf(firstImageMatch);
+      if (firstImageIndex > 50) {
+        // Remove the first image from its current position
+        finalMarkdown = finalMarkdown.replace(firstImageMatch, '').trimStart();
+        // Prepend it to the top
+        finalMarkdown = firstImageMatch + '\n\n' + finalMarkdown;
+      }
+    }
+
     if (matches.length > 0) {
       const imageGenApiKey = "__USE_GLOBAL__";
 
