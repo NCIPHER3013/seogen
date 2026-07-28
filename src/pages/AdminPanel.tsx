@@ -351,55 +351,59 @@ export default function AdminPanel() {
                     <CardContent className="p-6">
                       <div className="h-[350px] w-full mt-4">
                         <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                            <defs>
-                              <linearGradient id="colorUsers" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
-                                <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
-                              </linearGradient>
-                              <linearGradient id="colorArticles" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3}/>
-                                <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
-                              </linearGradient>
-                            </defs>
-                            <XAxis 
-                              dataKey="date" 
-                              stroke="#cbd5e1" 
-                              fontSize={12} 
-                              tickLine={false} 
-                              axisLine={false} 
-                            />
-                            <YAxis 
-                              stroke="#cbd5e1" 
-                              fontSize={12} 
-                              tickLine={false} 
-                              axisLine={false} 
-                              tickFormatter={(value) => `${value}`}
-                            />
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                            <Tooltip 
-                              contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                              labelStyle={{ fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}
-                            />
-                            <Area 
-                              type="monotone" 
-                              dataKey="users" 
-                              name="ผู้ใช้สมัครใหม่"
-                              stroke="#8b5cf6" 
-                              strokeWidth={3}
-                              fillOpacity={1} 
-                              fill="url(#colorUsers)" 
-                            />
-                            <Area 
-                              type="monotone" 
-                              dataKey="articles" 
-                              name="บทความที่สร้าง"
-                              stroke="#0ea5e9" 
-                              strokeWidth={3}
-                              fillOpacity={1} 
-                              fill="url(#colorArticles)" 
-                            />
-                          </AreaChart>
+                          {chartData.length > 0 ? (
+                            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                              <defs>
+                                <linearGradient id="colorUsers" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
+                                  <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                                </linearGradient>
+                                <linearGradient id="colorArticles" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3}/>
+                                  <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
+                                </linearGradient>
+                              </defs>
+                              <XAxis 
+                                dataKey="date" 
+                                stroke="#cbd5e1" 
+                                fontSize={12} 
+                                tickLine={false} 
+                                axisLine={false} 
+                              />
+                              <YAxis 
+                                stroke="#cbd5e1" 
+                                fontSize={12} 
+                                tickLine={false} 
+                                axisLine={false} 
+                                tickFormatter={(value) => `${value}`}
+                              />
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                              <Tooltip 
+                                contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                labelStyle={{ fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}
+                              />
+                              <Area 
+                                type="monotone" 
+                                dataKey="users" 
+                                name="ผู้ใช้สมัครใหม่"
+                                stroke="#8b5cf6" 
+                                strokeWidth={3}
+                                fillOpacity={1} 
+                                fill="url(#colorUsers)" 
+                              />
+                              <Area 
+                                type="monotone" 
+                                dataKey="articles" 
+                                name="บทความที่สร้าง"
+                                stroke="#0ea5e9" 
+                                strokeWidth={3}
+                                fillOpacity={1} 
+                                fill="url(#colorArticles)" 
+                              />
+                            </AreaChart>
+                          ) : (
+                            <div className="flex items-center justify-center h-full text-slate-400">กำลังโหลดข้อมูล...</div>
+                          )}
                         </ResponsiveContainer>
                       </div>
                     </CardContent>
