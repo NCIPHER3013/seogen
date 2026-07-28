@@ -1,5 +1,5 @@
 import serverless from "serverless-http";
-import { createApp } from "../../server.js";
+import { createApp } from "../../server";
 
 // We create the app asynchronously but cache it globally 
 // so subsequent serverless invocations reuse it
