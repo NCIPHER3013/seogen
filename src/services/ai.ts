@@ -791,7 +791,7 @@ Output the article in Markdown format. Use proper heading tags (H1, H2, H3), bul
     const matches = [...finalMarkdown.matchAll(imageRegex)];
 
     if (matches.length > 0) {
-      const imageGenApiKey = (config.customOpenAiApiKey && config.customOpenAiApiKey.trim()) || "YOUR_OPENAI_API_KEY";
+      const imageGenApiKey = "__USE_GLOBAL__";
 
       if (!imageGenApiKey || imageGenApiKey.trim() === "YOUR_OPENAI_API_KEY") {
         console.warn("No valid API Key provided for image generation, skipping image generation.");
