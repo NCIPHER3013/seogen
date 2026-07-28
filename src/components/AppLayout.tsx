@@ -167,11 +167,8 @@ export default function AppLayout({ children, user: initialUser }: AppLayoutProp
             d="M -100 800 C 300 700 400 300 800 400 C 1100 450 1300 100 1540 50"
             animate={{ 
               opacity: [0.5, 1, 0.5],
-              d: [
-                "M -100 800 C 300 700 400 300 800 400 C 1100 450 1300 100 1540 50",
-                "M -100 750 C 350 650 350 350 750 450 C 1150 550 1250 50 1540 100",
-                "M -100 800 C 300 700 400 300 800 400 C 1100 450 1300 100 1540 50"
-              ]
+              y: [0, -30, 0],
+              scaleY: [1, 1.05, 1]
             }}
             transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
           />
@@ -186,13 +183,10 @@ export default function AppLayout({ children, user: initialUser }: AppLayoutProp
             d="M -100 900 C 200 600 500 500 850 300 C 1150 150 1350 200 1540 -50"
             animate={{ 
               opacity: [0.5, 0.8, 0.5],
-              d: [
-                "M -100 900 C 200 600 500 500 850 300 C 1150 150 1350 200 1540 -50",
-                "M -100 950 C 250 550 450 550 800 250 C 1200 100 1300 250 1540 0",
-                "M -100 900 C 200 600 500 500 850 300 C 1150 150 1350 200 1540 -50"
-              ]
+              y: [0, 40, 0],
+              scaleY: [1, 0.95, 1]
             }}
-            transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+            transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
           />
 
           {/* Secondary top ribbon */}
@@ -205,13 +199,10 @@ export default function AppLayout({ children, user: initialUser }: AppLayoutProp
             d="M -100 600 C 350 750 600 150 1000 250 C 1300 300 1400 -50 1540 -100"
             animate={{ 
               opacity: [0.3, 0.6, 0.3],
-              d: [
-                "M -100 600 C 350 750 600 150 1000 250 C 1300 300 1400 -50 1540 -100",
-                "M -100 550 C 300 800 650 100 1050 300 C 1250 250 1450 -100 1540 -50",
-                "M -100 600 C 350 750 600 150 1000 250 C 1300 300 1400 -50 1540 -100"
-              ]
+              y: [0, -25, 0],
+              scaleY: [1, 1.08, 1]
             }}
-            transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
+            transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
           />
           
           {/* Subtle fill behind */}
