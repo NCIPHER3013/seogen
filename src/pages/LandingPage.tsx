@@ -86,8 +86,15 @@ export default function LandingPage() {
             fill="url(#wave-grad2)"
             opacity="0.15"
             d="M0,400 C320,600 600,200 1000,450 C1200,550 1440,300 1440,300 L1440,800 L0,800 Z"
-            animate={{ opacity: [0.15, 0.3, 0.15] }}
-            transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
+            animate={{ 
+              opacity: [0.15, 0.3, 0.15],
+              d: [
+                "M0,400 C320,600 600,200 1000,450 C1200,550 1440,300 1440,300 L1440,800 L0,800 Z",
+                "M0,450 C320,500 600,300 1000,400 C1200,600 1440,350 1440,350 L1440,800 L0,800 Z",
+                "M0,400 C320,600 600,200 1000,450 C1200,550 1440,300 1440,300 L1440,800 L0,800 Z"
+              ]
+            }}
+            transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
           />
 
           {/* Thick glowing wave */}
@@ -98,8 +105,15 @@ export default function LandingPage() {
             filter="url(#glow)"
             opacity="0.6"
             d="M-100,500 C300,700 600,200 1100,600 C1300,750 1540,400 1540,400"
-            animate={{ opacity: [0.6, 1, 0.6] }}
-            transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
+            animate={{ 
+              opacity: [0.6, 1, 0.6],
+              d: [
+                "M-100,500 C300,700 600,200 1100,600 C1300,750 1540,400 1540,400",
+                "M-100,550 C350,650 550,300 1050,550 C1350,650 1540,450 1540,450",
+                "M-100,500 C300,700 600,200 1100,600 C1300,750 1540,400 1540,400"
+              ]
+            }}
+            transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
           />
 
           {/* Thin bright wave */}
@@ -110,8 +124,15 @@ export default function LandingPage() {
             filter="url(#glow)"
             opacity="0.8"
             d="M-100,300 C200,500 700,300 1000,500 C1200,600 1540,200 1540,200"
-            animate={{ opacity: [0.8, 1, 0.8] }}
-            transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
+            animate={{ 
+              opacity: [0.8, 1, 0.8],
+              d: [
+                "M-100,300 C200,500 700,300 1000,500 C1200,600 1540,200 1540,200",
+                "M-100,350 C250,450 650,400 950,450 C1250,550 1540,250 1540,250",
+                "M-100,300 C200,500 700,300 1000,500 C1200,600 1540,200 1540,200"
+              ]
+            }}
+            transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
           />
         </svg>
       </div>

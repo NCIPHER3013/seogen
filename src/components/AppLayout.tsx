@@ -165,8 +165,15 @@ export default function AppLayout({ children, user: initialUser }: AppLayoutProp
             filter="url(#glow-heavy)"
             style={{ mixBlendMode: 'multiply' }}
             d="M-100,800 C300,700 400,300 800,400 C1100,450 1300,100 1540,50"
-            animate={{ opacity: [0.5, 1, 0.5] }}
-            transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
+            animate={{ 
+              opacity: [0.5, 1, 0.5],
+              d: [
+                "M-100,800 C300,700 400,300 800,400 C1100,450 1300,100 1540,50",
+                "M-100,750 C350,650 350,350 750,450 C1150,550 1250,50 1540,100",
+                "M-100,800 C300,700 400,300 800,400 C1100,450 1300,100 1540,50"
+              ]
+            }}
+            transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
           />
 
           {/* Main bright ribbon */}
@@ -177,8 +184,15 @@ export default function AppLayout({ children, user: initialUser }: AppLayoutProp
             filter="url(#glow-soft)"
             style={{ mixBlendMode: 'multiply' }}
             d="M-100,900 C200,600 500,500 850,300 C1150,150 1350,200 1540,-50"
-            animate={{ opacity: [0.5, 0.8, 0.5] }}
-            transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}
+            animate={{ 
+              opacity: [0.5, 0.8, 0.5],
+              d: [
+                "M-100,900 C200,600 500,500 850,300 C1150,150 1350,200 1540,-50",
+                "M-100,950 C250,550 450,550 800,250 C1200,100 1300,250 1540,0",
+                "M-100,900 C200,600 500,500 850,300 C1150,150 1350,200 1540,-50"
+              ]
+            }}
+            transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
           />
 
           {/* Secondary top ribbon */}
@@ -189,8 +203,15 @@ export default function AppLayout({ children, user: initialUser }: AppLayoutProp
             filter="url(#glow-soft)"
             style={{ mixBlendMode: 'multiply' }}
             d="M-100,600 C350,750 600,150 1000,250 C1300,300 1400,-50 1540,-100"
-            animate={{ opacity: [0.3, 0.6, 0.3] }}
-            transition={{ duration: 16, repeat: Infinity, ease: "easeInOut" }}
+            animate={{ 
+              opacity: [0.3, 0.6, 0.3],
+              d: [
+                "M-100,600 C350,750 600,150 1000,250 C1300,300 1400,-50 1540,-100",
+                "M-100,550 C300,800 650,100 1050,300 C1250,250 1450,-100 1540,-50",
+                "M-100,600 C350,750 600,150 1000,250 C1300,300 1400,-50 1540,-100"
+              ]
+            }}
+            transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
           />
           
           {/* Subtle fill behind */}
