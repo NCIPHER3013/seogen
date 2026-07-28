@@ -795,20 +795,30 @@ Output the article in Markdown format. Use proper heading tags (H1, H2, H3), bul
       }
     }
 
-    const imageRegex = new RegExp(IMAGE_MARKER_REGEX.source, 'g');
-    const matches = [...finalMarkdown.matchAll(imageRegex)];
-
     // Force the first image to be at the very top if coverToggle is enabled
-    if (config.coverToggle && matches.length > 0) {
-      const firstImageMatch = matches[0][0];
-      const firstImageIndex = finalMarkdown.indexOf(firstImageMatch);
-      if (firstImageIndex > 50) {
-        // Remove the first image from its current position
-        finalMarkdown = finalMarkdown.replace(firstImageMatch, '').trimStart();
-        // Prepend it to the top
-        finalMarkdown = firstImageMatch + '\n\n' + finalMarkdown;
+    {
+      const coverCheckRegex = new RegExp(IMAGE_MARKER_REGEX.source, 'g');
+      const coverMatches = [...finalMarkdown.matchAll(coverCheckRegex)];
+      if (config.coverToggle && coverMatches.length > 0) {
+        const firstImageInner = coverMatches[0][0];
+        const escapedInner = firstImageInner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const fullImageRegex = new RegExp(`!\\[.*?\\]\\(${escapedInner}\\)`);
+        const fullMatch = finalMarkdown.match(fullImageRegex);
+        
+        if (fullMatch) {
+          const fullImageString = fullMatch[0];
+          const firstImageIndex = finalMarkdown.indexOf(fullImageString);
+          if (firstImageIndex > 50) {
+            finalMarkdown = finalMarkdown.replace(fullImageString, '').trimStart();
+            finalMarkdown = fullImageString + '\n\n' + finalMarkdown;
+          }
+        }
       }
     }
+
+    // Re-capture matches AFTER cover move to ensure correct ordering
+    const imageRegex = new RegExp(IMAGE_MARKER_REGEX.source, 'g');
+    const matches = [...finalMarkdown.matchAll(imageRegex)];
 
     if (matches.length > 0) {
       const imageGenApiKey = "__USE_GLOBAL__";
@@ -821,21 +831,33 @@ Output the article in Markdown format. Use proper heading tags (H1, H2, H3), bul
         return finalMarkdown;
       }
 
+      // Build prompt-based lookup for early image results (streaming phase)
+      // เพื่อ match ตาม prompt แทน index ที่อาจเปลี่ยนหลังจัดเรียงใหม่
+      const earlyResultsByPrompt = new Map<string, Promise<string>>();
+      for (const [idx, promise] of earlyImagePromises.entries()) {
+        if (idx < earlyImageMatches.length) {
+          const key = earlyImageMatches[idx].prompt.trim().toLowerCase();
+          earlyResultsByPrompt.set(key, promise);
+        }
+      }
+
       const replacements: string[] = new Array(matches.length);
       const imagePromises = matches.map(async (match, i) => {
-        // ถ้าเคณสร้างรูปภาพนี้ไปแล้วระหว่าง streaming ใช้ผลเดิม
-        if (earlyImagePromises.has(i)) {
+        const parsed = parseImageMatch(match[1], match[2], config.aspectRatio || '1:1');
+        const imagePrompt = parsed.prompt;
+        const ar = parsed.ar;
+
+        // ลอง reuse จาก early streaming results ตาม prompt
+        const promptKey = imagePrompt.trim().toLowerCase();
+        if (earlyResultsByPrompt.has(promptKey)) {
           try {
-            replacements[i] = await earlyImagePromises.get(i)!;
+            replacements[i] = await earlyResultsByPrompt.get(promptKey)!;
+            earlyResultsByPrompt.delete(promptKey); // ใช้แล้วลบออก ป้องกันซ้ำ
             return;
           } catch (e) {
             // ถ้ารูปที่สร้างไปล้มเหลว สร้างใหม่
           }
         }
-
-        const parsed = parseImageMatch(match[1], match[2], config.aspectRatio || '1:1');
-        const imagePrompt = parsed.prompt;
-        const ar = parsed.ar;
 
         try {
           replacements[i] = await scheduleImage(() => generateSingleImage(i, imagePrompt, ar, config, resolvedImageApiPrompt));
@@ -852,7 +874,7 @@ Output the article in Markdown format. Use proper heading tags (H1, H2, H3), bul
       await Promise.all(imagePromises);
 
       let i = 0;
-      finalMarkdown = finalMarkdown.replace(imageRegex, () => replacements[i++]);
+      finalMarkdown = finalMarkdown.replace(new RegExp(IMAGE_MARKER_REGEX.source, 'g'), () => replacements[i++]);
 
       // Post-processing: ถ้ารูปทั้งหมดถูกกองไว้ท้ายบทความ → กระจายใหม่ให้สมดุล
       finalMarkdown = redistributeImages(finalMarkdown);
