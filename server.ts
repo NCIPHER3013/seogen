@@ -7,7 +7,7 @@ import express from "express";
 import cors from "cors";
 import path from "path";
 import https from "https";
-import pg from "pg";
+import { createClient } from "@supabase/supabase-js";
 
 export async function createApp() {
   const app = express();
@@ -602,58 +602,11 @@ export async function createApp() {
     }
   });
 
-  // DB connection สำหรับ admin (bypass RLS)
-  const supabaseUrl = process.env.VITE_SUPABASE_URL;
-  const dbProjectId = supabaseUrl ? new URL(supabaseUrl).hostname.split('.')[0] : '';
-  const dbPassword = process.env.SUPABASE_DB_PASSWORD;
-  const encodedPassword = encodeURIComponent(dbPassword || '');
-  const pool = dbPassword && dbProjectId ? new pg.Pool({
-    connectionString: `postgresql://postgres:${encodedPassword}@db.${dbProjectId}.supabase.co:5432/postgres`,
-    ssl: { rejectUnauthorized: false },
-  }) : null;
+  // DB connection สำหรับ admin (bypass RLS) ผ่าน REST API (หลีกเลี่ยงปัญหา IPv4 Timeout บน Netlify/AWS Lambda)
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+  const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+  const supabaseAdmin = supabaseUrl && supabaseServiceKey ? createClient(supabaseUrl, supabaseServiceKey) : null;
 
-  // ===== Auto-migration: สร้างตาราง global_settings ถ้ายังไม่มี =====
-  async function ensureGlobalSettingsTable() {
-    if (!pool) return;
-    try {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS public.global_settings (
-          id SMALLINT PRIMARY KEY DEFAULT 1,
-          text_api_key TEXT,
-          text_api_model TEXT,
-          text_api_base_url TEXT,
-          image_api_key TEXT,
-          image_api_model TEXT,
-          image_api_base_url TEXT,
-          updated_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-          CONSTRAINT single_row CHECK (id = 1)
-        );
-        INSERT INTO public.global_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
-      `);
-      console.log('[DB] global_settings table ready');
-    } catch (e: any) {
-      console.error('[DB] Failed to ensure global_settings:', e.message);
-    }
-  }
-  await ensureGlobalSettingsTable();
-
-  // ===== Auto-migration: เพิ่ม column ที่ขาดใน articles table =====
-  async function ensureArticlesColumns() {
-    if (!pool) return;
-    try {
-      // เพิ่ม column keyword, language, seo_score ถ้ายังไม่มี (Postgres ADD COLUMN IF NOT EXISTS)
-      await pool.query(`
-        ALTER TABLE public.articles
-          ADD COLUMN IF NOT EXISTS keyword TEXT,
-          ADD COLUMN IF NOT EXISTS language TEXT,
-          ADD COLUMN IF NOT EXISTS seo_score INTEGER DEFAULT 0;
-      `);
-      console.log('[DB] articles columns ready');
-    } catch (e: any) {
-      console.error('[DB] Failed to ensure articles columns:', e.message);
-    }
-  }
-  await ensureArticlesColumns();
 
   // ===== Helper: ดึง global AI settings จาก DB =====
   type GlobalAISettings = {
@@ -666,21 +619,20 @@ export async function createApp() {
     updated_at?: string | null;
   };
   async function getGlobalAISettings(): Promise<GlobalAISettings | null> {
-    if (!pool) return null;
+    if (!supabaseAdmin) return null;
     try {
-      const { rows } = await pool.query('SELECT text_api_key, text_api_model, text_api_base_url, image_api_key, image_api_model, image_api_base_url FROM public.global_settings WHERE id = 1 LIMIT 1');
-      if (rows[0]) {
-        const s = rows[0];
-        // Debug log แบบ masked เพื่อตรวจสอบความถูกต้อง
-        const maskForLog = (k: string | null) => k ? `${k.slice(0,6)}...${k.slice(-3)} (len=${k.length})` : 'NULL';
-        console.log('[DB] Global settings:', {
-          textKey: maskForLog(s.text_api_key),
-          textModel: s.text_api_model,
-          textBaseUrl: s.text_api_base_url,
-          imageKey: maskForLog(s.image_api_key),
-        });
-      }
-      return rows[0] || null;
+      const { data, error } = await supabaseAdmin.from('global_settings').select('*').eq('id', 1).single();
+      if (error || !data) return null;
+      
+      const maskForLog = (k: string | null) => k ? `${k.slice(0,6)}...${k.slice(-3)} (len=${k.length})` : 'NULL';
+      console.log('[DB] Global settings:', {
+        textKey: maskForLog(data.text_api_key),
+        textModel: data.text_api_model,
+        textBaseUrl: data.text_api_base_url,
+        imageKey: maskForLog(data.image_api_key),
+      });
+      
+      return data;
     } catch {
       return null;
     }
@@ -689,13 +641,16 @@ export async function createApp() {
   // Admin: ดึงข้อมูลผู้ใช้ทั้งหมด (bypass RLS)
   app.get("/api/admin/users", async (_req, res) => {
     try {
-      if (!pool) return res.status(500).json({ error: 'DB not configured' });
-      const { rows } = await pool.query(
-        'SELECT u.id, u.email, u.subscription_tier, u.word_credits, u.image_credits, u.created_at, '
-        + "COALESCE(au.raw_user_meta_data->>'role', 'user') as role "
-        + 'FROM public.users u LEFT JOIN auth.users au ON u.id = au.id ORDER BY u.created_at DESC'
-      );
-      res.json(rows);
+      if (!supabaseAdmin) return res.status(500).json({ error: 'DB not configured' });
+      const { data: usersData, error: usersError } = await supabaseAdmin.from('users').select('*').order('created_at', { ascending: false });
+      if (usersError) throw new Error(usersError.message);
+      
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.listUsers();
+      if (authError) throw new Error(authError.message);
+
+      const authMap = new Map(authData.users.map(u => [u.id, u.user_metadata?.role || 'user'] as const));
+      const combined = (usersData || []).map(u => ({ ...u, role: authMap.get(u.id) || 'user' }));
+      res.json(combined);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -704,28 +659,15 @@ export async function createApp() {
   // Admin: อัปเดต Role ผู้ใช้งาน
   app.post("/api/admin/users/role", async (req, res) => {
     try {
-      if (!pool) return res.status(500).json({ error: 'DB not configured' });
+      if (!supabaseAdmin) return res.status(500).json({ error: 'DB not configured' });
       const { userId, role } = req.body;
-      if (!userId || !role) {
-        return res.status(400).json({ error: 'Missing userId or role' });
-      }
+      if (!userId || !role) return res.status(400).json({ error: 'Missing userId or role' });
 
-      // Update the raw_user_meta_data for the user in auth.users
-      const query = `
-        UPDATE auth.users 
-        SET raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || jsonb_build_object('role', $1::text)
-        WHERE id = $2
-        RETURNING id;
-      `;
-      const { rowCount } = await pool.query(query, [role, userId]);
-      
-      if (rowCount === 0) {
-        return res.status(404).json({ error: 'User not found' });
-      }
+      const { data, error } = await supabaseAdmin.auth.admin.updateUserById(userId, { user_metadata: { role } });
+      if (error) throw new Error(error.message);
 
       res.json({ success: true, message: `Role updated to ${role}` });
     } catch (e: any) {
-      console.error('Failed to update role:', e);
       res.status(500).json({ error: e.message });
     }
   });
@@ -733,17 +675,23 @@ export async function createApp() {
   // Admin: สถิติรวม (bypass RLS)
   app.get("/api/admin/stats", async (_req, res) => {
     try {
-      if (!pool) return res.status(500).json({ error: 'DB not configured' });
-      const [usersR, articlesR, imagesR] = await Promise.all([
-        pool.query('SELECT COUNT(*)::int as c, COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE) as new_today FROM public.users'),
-        pool.query('SELECT COUNT(*)::int as c FROM public.articles'),
-        pool.query('SELECT COUNT(*)::int as c FROM public.images'),
+      if (!supabaseAdmin) return res.status(500).json({ error: 'DB not configured' });
+      
+      const today = new Date();
+      today.setHours(0,0,0,0);
+
+      const [users, newUsers, articles, images] = await Promise.all([
+        supabaseAdmin.from('users').select('*', { count: 'exact', head: true }),
+        supabaseAdmin.from('users').select('*', { count: 'exact', head: true }).gte('created_at', today.toISOString()),
+        supabaseAdmin.from('articles').select('*', { count: 'exact', head: true }),
+        supabaseAdmin.from('images').select('*', { count: 'exact', head: true })
       ]);
+
       res.json({
-        totalUsers: usersR.rows[0].c,
-        newUsersToday: usersR.rows[0].new_today,
-        totalArticles: articlesR.rows[0].c,
-        totalImages: imagesR.rows[0].c,
+        totalUsers: users.count || 0,
+        newUsersToday: newUsers.count || 0,
+        totalArticles: articles.count || 0,
+        totalImages: images.count || 0,
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -753,19 +701,37 @@ export async function createApp() {
   // Admin: ข้อมูลกราฟ 7 วันล่าสุด (bypass RLS)
   app.get("/api/admin/chart-data", async (_req, res) => {
     try {
-      if (!pool) return res.status(500).json({ error: 'DB not configured' });
-      const { rows } = await pool.query(`
-        WITH dates AS (
-          SELECT generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, '1 day')::date AS d
-        )
-        SELECT 
-          to_char(d, 'DD/MM') as date,
-          (SELECT count(*)::int FROM public.users WHERE created_at::date = d) as users,
-          (SELECT count(*)::int FROM public.articles WHERE created_at::date = d) as articles
-        FROM dates
-        ORDER BY d ASC;
-      `);
-      res.json(rows);
+      if (!supabaseAdmin) return res.status(500).json({ error: 'DB not configured' });
+      
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+      sevenDaysAgo.setHours(0,0,0,0);
+
+      const [usersRes, articlesRes] = await Promise.all([
+        supabaseAdmin.from('users').select('created_at').gte('created_at', sevenDaysAgo.toISOString()),
+        supabaseAdmin.from('articles').select('created_at').gte('created_at', sevenDaysAgo.toISOString())
+      ]);
+
+      const dataMap = new Map();
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
+        dataMap.set(dateStr, { date: dateStr, users: 0, articles: 0 });
+      }
+
+      const formatDate = (isoStr: string) => new Date(isoStr).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
+
+      (usersRes.data || []).forEach(u => {
+        const d = formatDate(u.created_at);
+        if (dataMap.has(d)) dataMap.get(d).users++;
+      });
+      (articlesRes.data || []).forEach(a => {
+        const d = formatDate(a.created_at);
+        if (dataMap.has(d)) dataMap.get(d).articles++;
+      });
+
+      res.json(Array.from(dataMap.values()));
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -774,14 +740,15 @@ export async function createApp() {
   // สร้าง user profile อัตโนมัติ (สำหรับทุก user, bypass RLS)
   app.post("/api/ensure-user", async (req, res) => {
     try {
-      if (!pool) return res.status(500).json({ error: 'DB not configured' });
+      if (!supabaseAdmin) return res.status(500).json({ error: 'DB not configured' });
       const { id, email } = req.body;
       if (!id || !email) return res.status(400).json({ error: 'Missing id or email' });
-      await pool.query(
-        'INSERT INTO public.users (id, email, subscription_tier, word_credits, image_credits) '
-        + 'VALUES ($1, $2, \'free\', 10000, 10) ON CONFLICT (id) DO NOTHING',
-        [id, email]
-      );
+      
+      const { error } = await supabaseAdmin.from('users').upsert({
+        id, email, subscription_tier: 'free', word_credits: 10000, image_credits: 10
+      }, { onConflict: 'id', ignoreDuplicates: true });
+      
+      if (error) throw new Error(error.message);
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -791,12 +758,14 @@ export async function createApp() {
   // Admin: อัปเดตผู้ใช้
   app.post("/api/admin/users/update", async (req, res) => {
     try {
-      if (!pool) return res.status(500).json({ error: 'DB not configured' });
+      if (!supabaseAdmin) return res.status(500).json({ error: 'DB not configured' });
       const { id, word_credits, image_credits, subscription_tier } = req.body;
-      await pool.query(
-        'UPDATE public.users SET word_credits = $1, image_credits = $2, subscription_tier = $3 WHERE id = $4',
-        [word_credits, image_credits, subscription_tier, id]
-      );
+      
+      const { error } = await supabaseAdmin.from('users').update({
+        word_credits, image_credits, subscription_tier
+      }).eq('id', id);
+
+      if (error) throw new Error(error.message);
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -807,7 +776,7 @@ export async function createApp() {
   // GET — ส่งคืนค่าที่ masked เพื่อความปลอดภัย (API key จะแสดงเฉพาะ prefix/suffix)
   app.get("/api/admin/settings", async (_req, res) => {
     try {
-      if (!pool) return res.status(500).json({ error: 'DB not configured' });
+      if (!supabaseAdmin) return res.status(500).json({ error: 'DB not configured' });
       const settings = await getGlobalAISettings();
       if (!settings) return res.json({});
 
@@ -835,7 +804,7 @@ export async function createApp() {
   // POST — บันทึกการตั้งค่า (ค่าที่ส่งมาเป็น '' จะไม่ overwrite key เดิม)
   app.post("/api/admin/settings", async (req, res) => {
     try {
-      if (!pool) return res.status(500).json({ error: 'DB not configured' });
+      if (!supabaseAdmin) return res.status(500).json({ error: 'DB not configured' });
       const {
         text_api_key, text_api_model, text_api_base_url,
         image_api_key, image_api_model, image_api_base_url
@@ -879,25 +848,17 @@ export async function createApp() {
         imageBaseUrl: cleanImageBaseUrl,
       });
 
-      await pool.query(
-        `UPDATE public.global_settings SET
-          text_api_key = $1,
-          text_api_model = $2,
-          text_api_base_url = $3,
-          image_api_key = $4,
-          image_api_model = $5,
-          image_api_base_url = $6,
-          updated_at = now()
-        WHERE id = 1`,
-        [
-          newTextKey,
-          text_api_model || null,
-          cleanTextBaseUrl || null,
-          newImageKey,
-          image_api_model || null,
-          cleanImageBaseUrl || null,
-        ]
-      );
+      const { error } = await supabaseAdmin.from('global_settings').update({
+          text_api_key: newTextKey,
+          text_api_model: text_api_model || null,
+          text_api_base_url: cleanTextBaseUrl || null,
+          image_api_key: newImageKey,
+          image_api_model: image_api_model || null,
+          image_api_base_url: cleanImageBaseUrl || null,
+          updated_at: new Date().toISOString()
+      }).eq('id', 1);
+
+      if (error) throw new Error(error.message);
       res.json({ ok: true, message: 'Settings saved' });
     } catch (e: any) {
       console.error('[Settings save error]', e);
