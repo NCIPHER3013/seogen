@@ -3,15 +3,15 @@ dotenv.config({ path: ".env.local" }); // โหลด .env.local ก่อน�
 
 import { GoogleGenAI } from "@google/genai";
 import express from "express";
-import { createServer as createViteServer } from "vite";
+
 import cors from "cors";
 import path from "path";
 import https from "https";
 import pg from "pg";
 
-async function startServer() {
+export async function createApp() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT || 3000;
 
   app.use(cors());
   app.use(express.json({ limit: '50mb' }));
@@ -52,17 +52,89 @@ async function startServer() {
     });
   }
 
+  // Seeddream Image Generation API
+  app.post("/api/seeddream-image", async (req, res) => {
+    try {
+      const { prompt } = req.body;
+      const seedreamKey = process.env.SEEDREAM_API_KEY;
+      
+      if (!seedreamKey) {
+        return res.status(500).json({ error: "SEEDREAM_API_KEY not configured in server" });
+      }
+
+      if (!prompt) {
+        return res.status(400).json({ error: "Prompt is required" });
+      }
+
+      const url = 'https://ark.ap-southeast.bytepluses.com/api/v3/images/generations';
+      const bodyStr = JSON.stringify({
+        model: 'seedream-4-5-251128',
+        prompt: prompt,
+        n: 1,
+        size: '2560x1440',
+        watermark: false
+      });
+
+      const response = await fetchHttpsJson(
+        url, 
+        bodyStr, 
+        {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${seedreamKey}`
+        }
+      );
+
+      if (response.status === 200 && response.data?.data?.[0]) {
+        const imgData = response.data.data[0];
+        if (imgData.b64_json) {
+          return res.json({ url: `data:image/jpeg;base64,${imgData.b64_json}` });
+        } else if (imgData.url) {
+          try {
+            const fetchImg = await fetch(imgData.url);
+            const imgBuf = await fetchImg.arrayBuffer();
+            const base64Image = Buffer.from(imgBuf).toString('base64');
+            return res.json({ url: `data:image/jpeg;base64,${base64Image}` });
+          } catch (e) {
+            console.error('Failed to download image on server:', e);
+            return res.status(500).json({ error: "Failed to download generated image on server" });
+          }
+        }
+      }
+      
+      return res.status(response.status).json({ error: "Failed to generate image", details: response.data });
+
+    } catch (err: any) {
+      console.error("Seeddream API Error:", err);
+      res.status(500).json({ error: err.message || "Internal server error" });
+    }
+  });
+
   // API proxy route using standard Gemini API
   app.post("/api/proxy/completions", async (req, res) => {
     try {
       let { messages } = req.body;
       
-      // Using the API Key provided by the user
-      const customApiKey = "";
-      const apiKey = customApiKey || process.env.GEMINI_API_KEY;
-      
+      const clientApiKey = req.headers['x-api-key'] as string;
+      const useGlobal = !clientApiKey || clientApiKey === '__USE_GLOBAL__';
+      let apiKey = clientApiKey;
+      let model = 'gemini-1.5-flash';
+      let baseUrl = '';
+
+      if (useGlobal) {
+        const globalConfig = await getGlobalAISettings();
+        if (globalConfig) {
+          apiKey = globalConfig.text_api_key || '';
+          model = globalConfig.text_api_model || 'deepseek-v4-flash-260425';
+          baseUrl = globalConfig.text_api_base_url || 'https://ark.ap-southeast.bytepluses.com/api/v3';
+        }
+      }
+
       if (!apiKey) {
-        return res.status(500).json({ error: "Server GEMINI_API_KEY is not configured." });
+        apiKey = process.env.GEMINI_API_KEY || '';
+      }
+
+      if (!apiKey) {
+        return res.status(500).json({ error: "ไม่มีการตั้งค่า API Key ของระบบ" });
       }
 
       // Convert OpenAI style messages to plain text prompt (since the client expects generating articles)
@@ -71,29 +143,80 @@ async function startServer() {
       const userMessage = messages.find((m: any) => m.role === 'user')?.content || '';
       const prompt = `System Instructions: ${systemMessage}\n\nUser Request: ${userMessage}`;
 
-      const ai = new GoogleGenAI({ apiKey });
-      
+      const isDeepSeek = model.toLowerCase().startsWith('deepseek-');
+      const isArk = apiKey.startsWith('ark-');
+      const isOpenAI = isArk || isDeepSeek || baseUrl.includes('ark.') || baseUrl.includes('z.ai') || baseUrl.includes('openai.com');
+
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
 
-      try {
-        const streamResponse = await ai.models.generateContentStream({
-          model: 'gemini-1.5-flash', // Best model for writing complex/long articles
-          contents: prompt,
-        });
+      if (isOpenAI) {
+        // Handle OpenAI-compatible streaming
+        const endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
+        try {
+          // Note: using node fetch for streaming
+          const streamResponse = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+              model: model,
+              messages: messages,
+              stream: true,
+              max_tokens: isArk ? 16384 : 8192
+            })
+          });
 
-        for await (const chunk of streamResponse) {
-          if (chunk.text) {
-             res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: chunk.text } }] })}\n\n`);
+          if (!streamResponse.ok) {
+            const errBody = await streamResponse.text();
+            res.write(`data: ${JSON.stringify({ error: `API Error: ${streamResponse.status} ${errBody}` })}\n\n`);
+            return res.end();
           }
+
+          if (streamResponse.body) {
+            const reader = streamResponse.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let done = false;
+            while (!done) {
+              const { value, done: readDone } = await reader.read();
+              done = readDone;
+              if (value) {
+                res.write(decoder.decode(value, { stream: true }));
+              }
+            }
+          }
+          res.end();
+        } catch (err: any) {
+          console.error("OpenAI stream error:", err);
+          res.write(`data: ${JSON.stringify({ error: err.message || "Unknown stream error" })}\n\n`);
+          res.end();
         }
-        res.write(`data: [DONE]\n\n`);
-        res.end();
-      } catch (genError: any) {
-        console.error("Gemini Generate stream error:", genError);
-        res.write(`data: ${JSON.stringify({ error: genError.message || "Unknown error during streaming" })}\n\n`);
-        res.end();
+      } else {
+        // Fallback to Gemini
+        const prompt = `System Instructions: ${systemMessage}\n\nUser Request: ${userMessage}`;
+        const ai = new GoogleGenAI({ apiKey });
+        
+        try {
+          const streamResponse = await ai.models.generateContentStream({
+            model: model || 'gemini-1.5-flash',
+            contents: prompt,
+          });
+
+          for await (const chunk of streamResponse) {
+            if (chunk.text) {
+               res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: chunk.text } }] })}\n\n`);
+            }
+          }
+          res.write(`data: [DONE]\n\n`);
+          res.end();
+        } catch (genError: any) {
+          console.error("Gemini Generate stream error:", genError);
+          res.write(`data: ${JSON.stringify({ error: genError.message || "Unknown error during streaming" })}\n\n`);
+          res.end();
+        }
       }
     } catch (error: any) {
       console.error("Proxy fetch error:", error.message);
@@ -177,11 +300,15 @@ async function startServer() {
                 model: model,
                 prompt: contents.substring(0, 4000),
                 n: 1,
-                size: (model && model.toLowerCase().includes('seedream-4-0'))
-                  ? (config?.aspectRatio === '16:9' ? '1280x720' : '1024x1024')
-                  : (model && model.toLowerCase().includes('seedream'))
-                    ? (config?.aspectRatio === '16:9' ? '2560x1440' : '1920x1920')
-                    : (config?.aspectRatio === '16:9' ? '1024x768' : '1024x1024'),
+                // Seedream 1K resolution — เล็กเพื่อ SEO (โหลดเร็ว, Core Web Vitals ดี)
+                // รองรับ 1K/2K/4K และ explicit pixel sizes 512-8192
+                size: (model && model.toLowerCase().includes('seedream'))
+                  ? (config?.aspectRatio === '16:9' ? '1280x720'
+                    : config?.aspectRatio === '4:3' ? '1152x864'
+                    : config?.aspectRatio === '3:4' ? '864x1152'
+                    : config?.aspectRatio === '9:16' ? '720x1280'
+                    : '1024x1024')
+                  : (config?.aspectRatio === '16:9' ? '1024x768' : '1024x1024'),
                 watermark: false
               }),
               signal: AbortSignal.timeout(180000)
@@ -793,9 +920,42 @@ async function startServer() {
     }
   });
 
+  // SSRF protection: ตรวจ URL ก่อน fetch เพื่อป้องกันการเข้าถึงระบบภายใน
+  function isPrivateOrUnsafeUrl(rawUrl: string): boolean {
+    try {
+      const parsed = new URL(rawUrl);
+      // อนุญาตเฉพาะ http/https เท่านั้น
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return true;
+      const host = parsed.hostname.toLowerCase();
+      // บล็อก localhost และ .local
+      if (host === 'localhost' || host.endsWith('.local')) return true;
+      // บล็อก IPv6 loopback และ link-local/private
+      if (host === '::1' || host.startsWith('fe80:') || host.startsWith('fc') || host.startsWith('fd')) return true;
+      // ตรวจ IPv4 (ทั้งหมดที่เป็น IP เปล่าๆ ไม่ใช่ domain)
+      const ipMatch = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+      if (ipMatch) {
+        const [a, b] = ipMatch.slice(1).map(Number);
+        if (a === 0) return true;                              // 0.0.0.0/8
+        if (a === 10) return true;                             // 10.0.0.0/8 (private)
+        if (a === 127) return true;                            // 127.0.0.0/8 (loopback)
+        if (a === 169 && b === 254) return true;               // 169.254.0.0/16 (link-local / cloud metadata)
+        if (a === 172 && b >= 16 && b <= 31) return true;      // 172.16.0.0/12 (private)
+        if (a === 192 && b === 168) return true;               // 192.168.0.0/16 (private)
+        if (a >= 224) return true;                             // multicast / reserved
+      }
+      return false;
+    } catch {
+      return true; // URL ไม่ valid → ถือว่าไม่ปลอดภัย
+    }
+  }
+
   app.post("/api/fetch-url", async (req, res) => {
     try {
       const { url } = req.body;
+      // SSRF protection: บล็อก private IP / localhost / protocol อื่น
+      if (!url || typeof url !== 'string' || isPrivateOrUnsafeUrl(url)) {
+        return res.status(400).json({ error: "URL ไม่ปลอดภัยหรือไม่รองรับ (อนุญาตเฉพาะเว็บสาธารณะ http/https เท่านั้น)" });
+      }
       const response = await fetch(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -816,13 +976,14 @@ async function startServer() {
   });
 
   // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== "production" && !process.env.NETLIFY) {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
-  } else {
+  } else if (!process.env.NETLIFY) {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {
@@ -830,9 +991,18 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  return app;
 }
 
-startServer();
+// Only start the server if this file is run directly (not imported as a module by Netlify)
+import { fileURLToPath } from 'url';
+const isMainModule = typeof process !== 'undefined' && process.argv[1] === fileURLToPath(import.meta.url);
+
+if (isMainModule) {
+  createApp().then(app => {
+    const PORT = Number(process.env.PORT) || 3000;
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  });
+}

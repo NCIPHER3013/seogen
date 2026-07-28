@@ -58,10 +58,27 @@ const schemaSql = `
       created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
   );
 
+  -- 5. "topical_maps" table
+  CREATE TABLE IF NOT EXISTS topical_maps (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+      project_name VARCHAR(255) NOT NULL,
+      keyword VARCHAR(255),
+      brand VARCHAR(255),
+      business_type VARCHAR(255),
+      main_product VARCHAR(255),
+      target_audience VARCHAR(255),
+      additional_info TEXT,
+      result_text TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+  );
+
   --- ROW LEVEL SECURITY (RLS) POLICIES
   ALTER TABLE users ENABLE ROW LEVEL SECURITY;
   ALTER TABLE articles ENABLE ROW LEVEL SECURITY;
   ALTER TABLE images ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE topical_maps ENABLE ROW LEVEL SECURITY;
 
   -- User Profile Policies
   DROP POLICY IF EXISTS "Users can view own profile" ON users;
@@ -70,23 +87,25 @@ const schemaSql = `
   DROP POLICY IF EXISTS "Users can update own profile" ON users;
   CREATE POLICY "Users can update own profile" ON users FOR UPDATE USING (auth.uid() = id);
 
-  -- Admin Policies (เช็ค user_metadata.role จาก auth.users)
+  -- Admin Policies (เช็ค user_metadata.role จาก JWT)
   DROP POLICY IF EXISTS "Admins can view all users" ON users;
   CREATE POLICY "Admins can view all users" ON users FOR SELECT USING (
-    EXISTS (SELECT 1 FROM auth.users WHERE auth.users.id = auth.uid() AND auth.users.raw_user_meta_data->>'role' = 'admin')
+    (auth.jwt() -> 'user_metadata' ->> 'role') = 'admin'
   );
 
   DROP POLICY IF EXISTS "Admins can update all users" ON users;
   CREATE POLICY "Admins can update all users" ON users FOR UPDATE USING (
-    EXISTS (SELECT 1 FROM auth.users WHERE auth.users.id = auth.uid() AND auth.users.raw_user_meta_data->>'role' = 'admin')
+    (auth.jwt() -> 'user_metadata' ->> 'role') = 'admin'
   );
 
   -- Articles
   DROP POLICY IF EXISTS "Admins can view all articles" ON articles;
+  /*
   CREATE POLICY "Admins can view all articles" ON articles FOR SELECT USING (
-    EXISTS (SELECT 1 FROM auth.users WHERE auth.users.id = auth.uid() AND auth.users.raw_user_meta_data->>'role' = 'admin')
+    (auth.jwt() -> 'user_metadata' ->> 'role') = 'admin'
     OR auth.uid() = user_id
   );
+  */
   DROP POLICY IF EXISTS "Users can view own articles" ON articles;
   CREATE POLICY "Users can view own articles" ON articles FOR SELECT USING (auth.uid() = user_id);
 
@@ -114,6 +133,19 @@ const schemaSql = `
   CREATE POLICY "Users can delete images from own articles" ON images FOR DELETE USING (
       EXISTS (SELECT 1 FROM articles WHERE articles.id = images.article_id AND articles.user_id = auth.uid())
   );
+
+  -- Topical Maps
+  DROP POLICY IF EXISTS "Users can view own topical_maps" ON topical_maps;
+  CREATE POLICY "Users can view own topical_maps" ON topical_maps FOR SELECT USING (auth.uid() = user_id);
+
+  DROP POLICY IF EXISTS "Users can insert own topical_maps" ON topical_maps;
+  CREATE POLICY "Users can insert own topical_maps" ON topical_maps FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+  DROP POLICY IF EXISTS "Users can update own topical_maps" ON topical_maps;
+  CREATE POLICY "Users can update own topical_maps" ON topical_maps FOR UPDATE USING (auth.uid() = user_id);
+
+  DROP POLICY IF EXISTS "Users can delete own topical_maps" ON topical_maps;
+  CREATE POLICY "Users can delete own topical_maps" ON topical_maps FOR DELETE USING (auth.uid() = user_id);
 `;
 
 async function runMigration() {

@@ -885,12 +885,16 @@ export default function CampaignSetup() {
           setGeneratedArticles(prev => {
              const merged = [...prev];
              mappedArticles.forEach(dbA => {
-                if (!merged.some(p => p.id === dbA.id)) {
+                const existingIdx = merged.findIndex(p => p.id === dbA.id);
+                if (existingIdx === -1) {
                   merged.push(dbA);
+                } else {
+                  // Update existing item with latest data from DB
+                  merged[existingIdx] = dbA;
                 }
              });
              // Sort by date descending roughly
-             return merged;
+             return merged.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
           });
         }
       } catch (e) {
@@ -1352,6 +1356,27 @@ export default function CampaignSetup() {
                     </Button>
                   </div>
                 )}
+                
+                {inputs.length > 0 && (
+                  <div className="flex items-center justify-end mb-4">
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => {
+                        if (selectedInputIds.length === inputs.length) {
+                          setSelectedInputIds([]);
+                        } else {
+                          setSelectedInputIds(inputs.map(i => i.id));
+                        }
+                      }}
+                      className="text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 text-xs font-bold px-3 h-8 rounded-lg transition-all"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                      {selectedInputIds.length === inputs.length && inputs.length > 0 ? 'ยกเลิกการเลือกทั้งหมด' : 'เลือกทั้งหมด'}
+                    </Button>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {inputs.length === 0 ? (
                     <div className="col-span-full bg-white text-sm rounded-[2rem] border border-slate-100 shadow-sm p-12 flex flex-col items-center justify-center min-h-[400px]">

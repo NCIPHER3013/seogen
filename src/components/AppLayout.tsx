@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { LayoutDashboard, Plus, FileText, User, Sparkles, LogOut, Menu, X, Users, Loader2 } from 'lucide-react';
+import { LayoutDashboard, Plus, FileText, User, Sparkles, LogOut, Menu, X, Users, Loader2, Map } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAdmin } from '@/hooks/useAdmin';
@@ -110,7 +110,8 @@ export default function AppLayout({ children, user: initialUser }: AppLayoutProp
   const navLinks = [
     { to: "/dashboard", icon: LayoutDashboard, label: "ภาพรวม" },
     { to: "/campaign/new", icon: Plus, label: "สร้างแคมเปญ" },
-    { to: "/articles", icon: FileText, label: "บทความ" }
+    { to: "/articles", icon: FileText, label: "บทความ" },
+    { to: "/topical-map", icon: Map, label: "Topical Map" }
   ];
 
   if (isAdmin) {
@@ -120,9 +121,89 @@ export default function AppLayout({ children, user: initialUser }: AppLayoutProp
   return (
     <div className="min-h-[100dvh] bg-slate-50/50 font-sans text-slate-900 selection:bg-emerald-500/20 flex flex-col relative overflow-x-hidden">
       
-      {/* Dynamic Background Blurs */}
-      <div className="fixed top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-emerald-200/40 blur-[120px] pointer-events-none z-0" />
-      <div className="fixed bottom-[-20%] right-[-10%] w-[40%] h-[50%] rounded-full bg-emerald-100/50 blur-[100px] pointer-events-none z-0" />
+      {/* Decorative Background Gradients (Light Smoky Aurora) */}
+      <div className="fixed inset-0 w-full h-full overflow-hidden pointer-events-none bg-slate-50" style={{ zIndex: 0 }}>
+        <svg className="absolute w-full h-full opacity-60" preserveAspectRatio="none" viewBox="0 0 1440 800">
+          <defs>
+            <linearGradient id="smoke-grad1" x1="0%" y1="100%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#10b981" stopOpacity="0.4" />
+              <stop offset="50%" stopColor="#0ea5e9" stopOpacity="0.5" />
+              <stop offset="100%" stopColor="#84cc16" stopOpacity="0.2" />
+            </linearGradient>
+            <linearGradient id="smoke-grad2" x1="0%" y1="100%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#0ea5e9" stopOpacity="0.4" />
+              <stop offset="50%" stopColor="#14b8a6" stopOpacity="0.5" />
+              <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.3" />
+            </linearGradient>
+            <linearGradient id="smoke-grad3" x1="0%" y1="100%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.2" />
+              <stop offset="50%" stopColor="#2dd4bf" stopOpacity="0.4" />
+              <stop offset="100%" stopColor="#10b981" stopOpacity="0.3" />
+            </linearGradient>
+            <filter id="glow-heavy" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="35" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <filter id="glow-soft" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="20" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+
+          {/* Base thick ribbon */}
+          <motion.path
+            fill="none"
+            stroke="url(#smoke-grad3)"
+            strokeWidth="60"
+            filter="url(#glow-heavy)"
+            style={{ mixBlendMode: 'multiply' }}
+            d="M-100,800 C300,700 400,300 800,400 C1100,450 1300,100 1540,50"
+            animate={{ opacity: [0.5, 1, 0.5] }}
+            transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
+          />
+
+          {/* Main bright ribbon */}
+          <motion.path
+            fill="none"
+            stroke="url(#smoke-grad1)"
+            strokeWidth="40"
+            filter="url(#glow-soft)"
+            style={{ mixBlendMode: 'multiply' }}
+            d="M-100,900 C200,600 500,500 850,300 C1150,150 1350,200 1540,-50"
+            animate={{ opacity: [0.5, 0.8, 0.5] }}
+            transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}
+          />
+
+          {/* Secondary top ribbon */}
+          <motion.path
+            fill="none"
+            stroke="url(#smoke-grad2)"
+            strokeWidth="30"
+            filter="url(#glow-soft)"
+            style={{ mixBlendMode: 'multiply' }}
+            d="M-100,600 C350,750 600,150 1000,250 C1300,300 1400,-50 1540,-100"
+            animate={{ opacity: [0.3, 0.6, 0.3] }}
+            transition={{ duration: 16, repeat: Infinity, ease: "easeInOut" }}
+          />
+          
+          {/* Subtle fill behind */}
+          <motion.path
+            fill="url(#smoke-grad1)"
+            opacity="0.1"
+            style={{ mixBlendMode: 'multiply' }}
+            d="M-100,900 C200,600 500,500 850,300 C1150,150 1350,200 1540,-50 L1540,800 L-100,800 Z"
+            animate={{ opacity: [0.1, 0.2, 0.1] }}
+            transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}
+          />
+        </svg>
+      </div>
 
       {/* Floating Top Navigation */}
       <motion.header 

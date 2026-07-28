@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -83,7 +84,8 @@ const MarkdownImage = ({ src, alt, ...props }: any) => {
       {...props}
       src={imgSrc}
       alt={alt}
-      style={{ maxWidth: '100%', borderRadius: '12px', margin: '1.5rem auto', display: 'block', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}
+      className={props.className || "max-w-full rounded-xl my-6 mx-auto block shadow-sm"}
+      style={props.style}
       referrerPolicy="no-referrer"
     />
   );
@@ -176,7 +178,7 @@ const uploadImageToSupabase = async (src: string, altText: string = ''): Promise
 
       if (!fetchSuccess || src.startsWith('gemini_img_')) {
         const keyword = altText || 'industrial forklift';
-        const fallbackUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(keyword)}?width=800&height=450&nologo=true`;
+        const fallbackUrl = '';
         fallbackReturn = fallbackUrl;
         const response = await fetch(fallbackUrl);
         const blob = await response.blob();
@@ -391,6 +393,95 @@ const WysiwygEditor = ({ content, onChange }: WysiwygEditorProps) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const isUpdatingRef = useRef<boolean>(false);
   const lastContentRef = useRef<string>('');
+  const [isFocused, setIsFocused] = useState(false);
+  
+  // Custom dialog states
+  const [linkModalOpen, setLinkModalOpen] = useState(false);
+  const [imageModalOpen, setImageModalOpen] = useState(false);
+  const [inputValue, setInputValue] = useState('https://');
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [savedRange, setSavedRange] = useState<Range | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [toolbarPos, setToolbarPos] = useState<{top: number, left: number} | null>(null);
+
+  const updateToolbarPos = () => {
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0 && containerRef.current) {
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      const containerRect = containerRef.current.getBoundingClientRect();
+      
+      if (rect.top === 0 && rect.left === 0) return;
+
+      setToolbarPos({
+        top: rect.top - containerRect.top - 50,
+        left: rect.left - containerRect.left + (rect.width / 2)
+      });
+    }
+  };
+
+  // Save selection before opening modal
+  const saveSelection = () => {
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      setSavedRange(selection.getRangeAt(0));
+    }
+  };
+
+  // Restore selection before executing command
+  const restoreSelection = () => {
+    if (savedRange) {
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(savedRange);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setIsProcessing(true);
+    try {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64data = reader.result as string;
+        const url = await uploadImageToSupabase(base64data);
+        restoreSelection();
+        executeCommand('insertImage', url);
+        setImageModalOpen(false);
+        setIsProcessing(false);
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error(err);
+      setIsProcessing(false);
+    }
+  };
+
+  const handleAIGenerate = async () => {
+    if (!aiPrompt.trim()) return;
+    setIsProcessing(true);
+    try {
+      const response = await fetch('/api/seeddream-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: aiPrompt })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.url) throw new Error(data.error || "Failed to generate image");
+
+      const finalUrl = await uploadImageToSupabase(data.url, aiPrompt);
+      restoreSelection();
+      executeCommand('insertImage', finalUrl);
+      setImageModalOpen(false);
+    } catch (err) {
+      console.error(err);
+      alert('เกิดข้อผิดพลาดในการสร้างภาพ: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    }
+    setIsProcessing(false);
+  };
 
   // Synchronize incoming markdown to HTML safely
   useEffect(() => {
@@ -433,23 +524,58 @@ const WysiwygEditor = ({ content, onChange }: WysiwygEditorProps) => {
   };
 
   const handleLink = () => {
-    const url = prompt('ใส่ลิงก์ปลายทาง (Enter URL):', 'https://');
-    if (url) {
-      executeCommand('createLink', url);
+    saveSelection();
+    setInputValue('https://');
+    setLinkModalOpen(true);
+  };
+
+  const submitLink = () => {
+    if (inputValue && inputValue !== 'https://') {
+      restoreSelection();
+      executeCommand('createLink', inputValue);
     }
+    setLinkModalOpen(false);
   };
 
   const handleImage = () => {
-    const url = prompt('ใส่ที่อยู่ลิงก์รูปภาพ (Enter Image URL):', 'https://');
-    if (url) {
-      executeCommand('insertImage', url);
+    saveSelection();
+    setInputValue('https://');
+    setImageModalOpen(true);
+  };
+
+  const submitImage = () => {
+    if (inputValue && inputValue !== 'https://') {
+      restoreSelection();
+      executeCommand('insertImage', inputValue);
     }
+    setImageModalOpen(false);
   };
 
   return (
-    <div className="space-y-4">
-      {/* Premium WYSIWYG Formatting Toolbar */}
-      <div className="flex flex-wrap items-center gap-1 bg-white text-slate-900 p-1.5 rounded-xl shadow-lg w-fit overflow-x-auto no-scrollbar shrink-0 sticky top-4 z-40 my-3">
+    <div 
+      ref={containerRef}
+      className="relative pt-2"
+      onMouseUp={updateToolbarPos}
+      onKeyUp={updateToolbarPos}
+      onFocus={() => setIsFocused(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          setIsFocused(false);
+        }
+      }}
+    >
+      {/* Absolute zero-height container for the floating toolbar */}
+      <div 
+        className="absolute z-50 overflow-visible flex justify-center items-start w-full pointer-events-none transition-all duration-200 ease-out"
+        style={{
+          top: toolbarPos ? toolbarPos.top : 0,
+          left: toolbarPos ? toolbarPos.left : '50%',
+          transform: 'translateX(-50%)'
+        }}
+      >
+        <div className={`flex flex-wrap items-center gap-1 bg-white/95 backdrop-blur-xl border border-slate-200/80 p-1.5 rounded-2xl shadow-xl w-fit overflow-x-auto no-scrollbar transition-all duration-200 ${
+          isFocused && toolbarPos ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-95 pointer-events-none'
+        }`}>
         <Button
           type="button"
           variant="ghost"
@@ -479,7 +605,7 @@ const WysiwygEditor = ({ content, onChange }: WysiwygEditorProps) => {
           <Type className="w-3.5 h-3.5" />
         </Button>
 
-        <Separator orientation="vertical" className="h-4 bg-slate-700 mx-1" />
+        <Separator orientation="vertical" className="h-4 w-[1px] bg-slate-200 mx-1" />
 
         <Button
           type="button"
@@ -500,7 +626,7 @@ const WysiwygEditor = ({ content, onChange }: WysiwygEditorProps) => {
           I
         </Button>
 
-        <Separator orientation="vertical" className="h-4 bg-slate-700 mx-1" />
+        <Separator orientation="vertical" className="h-4 w-[1px] bg-slate-200 mx-1" />
 
         <Button
           type="button"
@@ -523,7 +649,7 @@ const WysiwygEditor = ({ content, onChange }: WysiwygEditorProps) => {
           1.
         </Button>
 
-        <Separator orientation="vertical" className="h-4 bg-slate-700 mx-1" />
+        <Separator orientation="vertical" className="h-4 w-[1px] bg-slate-200 mx-1" />
 
         <Button
           type="button"
@@ -556,19 +682,104 @@ const WysiwygEditor = ({ content, onChange }: WysiwygEditorProps) => {
           ""
         </Button>
       </div>
+      </div>
 
       {/* Editor Main Content Area */}
-      <div className="border border-slate-100/80 rounded-2xl p-6 bg-white hover:bg-white/90 transition-colors focus-within:ring-2 focus-within:ring-emerald-800 focus-within:border-emerald-400 shadow-lg shadow-slate-200/50">
+      <div className="border border-slate-100/80 rounded-2xl p-6 bg-white hover:bg-white/90 transition-colors focus-within:ring-2 focus-within:ring-emerald-500/50 focus-within:border-emerald-400 shadow-sm mt-4">
         <div
           ref={editorRef}
           contentEditable
           onInput={handleInput}
           onBlur={handleInput}
-          className="w-full min-h-[500px] outline-none text-[17px] leading-relaxed text-slate-900 font-sans pb-32 focus:outline-none select-text markdown-body empty:before:content-[attr(data-placeholder)] empty:before:text-slate-700 before:pointer-events-none"
+          className="w-full min-h-[500px] outline-none pb-32 focus:outline-none select-text markdown-body empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400 before:pointer-events-none font-sans font-normal text-[15px] text-slate-700 subpixel-antialiased [&_p]:font-normal [&_p]:text-slate-700 [&_p]:text-[15px] [&_p]:leading-[1.7] [&_h2]:font-bold [&_h2]:text-slate-900 [&_h2]:text-xl [&_h3]:font-bold [&_h3]:text-slate-900 [&_h3]:text-lg [&_li]:font-normal [&_li]:text-slate-700 [&_li]:text-[15px] [&_strong]:font-semibold [&_strong]:text-slate-900"
           data-placeholder="เขียนบทความของคุณตรงนี้..."
           style={{ wordBreak: 'break-word' }}
         />
       </div>
+
+      {/* Link Modal */}
+      <Dialog open={linkModalOpen} onOpenChange={setLinkModalOpen}>
+        <DialogContent className="max-w-md bg-white border border-slate-100 rounded-3xl p-6 shadow-xl">
+          <h3 className="text-lg font-bold text-slate-800 mb-2">เพิ่มลิงก์ (Insert Link)</h3>
+          <p className="text-sm text-slate-500 mb-4">ระบุ URL ปลายทางที่คุณต้องการให้ข้อความลิงก์ไป</p>
+          <Input 
+            value={inputValue} 
+            onChange={(e) => setInputValue(e.target.value)} 
+            placeholder="https://example.com"
+            className="mb-6 h-12 rounded-xl bg-slate-50 border-slate-200"
+            onKeyDown={(e) => { if (e.key === 'Enter') submitLink(); }}
+          />
+          <div className="flex justify-end gap-3">
+            <Button variant="ghost" onClick={() => setLinkModalOpen(false)} className="rounded-xl">ยกเลิก</Button>
+            <Button onClick={submitLink} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-md">เพิ่มลิงก์</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Image Modal */}
+      <Dialog open={imageModalOpen} onOpenChange={setImageModalOpen}>
+        <DialogContent className="max-w-md bg-white border border-slate-100 rounded-3xl p-6 shadow-xl">
+          <h3 className="text-lg font-bold text-slate-800 mb-4">แทรกรูปภาพ (Insert Image)</h3>
+          
+          <Tabs defaultValue="url" className="w-full">
+            <TabsList className="w-full grid grid-cols-3 mb-4 bg-slate-100 p-1 rounded-xl">
+              <TabsTrigger value="url" className="rounded-lg text-xs font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm">URL</TabsTrigger>
+              <TabsTrigger value="upload" className="rounded-lg text-xs font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm">อัปโหลดจากเครื่อง</TabsTrigger>
+              <TabsTrigger value="ai" className="rounded-lg text-xs font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm">AI (Seeddream)</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="url" className="space-y-4">
+              <p className="text-sm text-slate-500">ระบุ URL ของรูปภาพที่คุณต้องการแทรก</p>
+              <Input 
+                value={inputValue} 
+                onChange={(e) => setInputValue(e.target.value)} 
+                placeholder="https://example.com/image.jpg"
+                className="h-12 rounded-xl bg-slate-50 border-slate-200"
+                onKeyDown={(e) => { if (e.key === 'Enter') submitImage(); }}
+              />
+              <div className="flex justify-end gap-3 mt-2">
+                <Button variant="ghost" onClick={() => setImageModalOpen(false)} className="rounded-xl">ยกเลิก</Button>
+                <Button onClick={submitImage} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-md">แทรกรูปภาพ</Button>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="upload" className="space-y-4">
+              <p className="text-sm text-slate-500">อัปโหลดรูปภาพจากอุปกรณ์ของคุณ (จะถูกอัปโหลดขึ้นเซิร์ฟเวอร์)</p>
+              <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center bg-slate-50 relative hover:bg-slate-100 transition-colors cursor-pointer">
+                <ImageIcon className="w-8 h-8 text-slate-400 mb-2" />
+                <span className="text-sm font-medium text-slate-600">{isProcessing ? 'กำลังอัปโหลด...' : 'คลิกเพื่อเลือกไฟล์รูปภาพ'}</span>
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed" 
+                  onChange={handleFileUpload}
+                  disabled={isProcessing}
+                />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="ai" className="space-y-4">
+              <p className="text-sm text-slate-500">พิมพ์คำอธิบายรูปภาพ (Prompt) เพื่อให้ AI สร้างให้ใหม่</p>
+              <Textarea 
+                value={aiPrompt} 
+                onChange={(e) => setAiPrompt(e.target.value)} 
+                placeholder="เช่น ภาพถ่ายสมจริงของหุ่นยนต์ในโรงงาน..."
+                className="min-h-[100px] rounded-xl bg-slate-50 border-slate-200"
+              />
+              <div className="flex justify-end gap-3 mt-2">
+                <Button variant="ghost" onClick={() => setImageModalOpen(false)} className="rounded-xl">ยกเลิก</Button>
+                <Button onClick={handleAIGenerate} disabled={isProcessing || !aiPrompt.trim()} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-md flex items-center gap-2">
+                  {isProcessing ? (
+                    <><div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> กำลังสร้างภาพ...</>
+                  ) : (
+                    '✨ สร้าง & แทรก'
+                  )}
+                </Button>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
@@ -577,8 +788,14 @@ export default function ArticleEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { isAdmin } = useAdmin();
-  const [articles, setArticles] = usePersistentState<any[]>('campaign_config_generatedArticles', []);
+  const [articles, setArticles] = usePersistentState<any[]>('generatedArticles', []);
   const [article, setArticle] = useState<any>(null);
+  const latestArticleRef = useRef<any>(null);
+  
+  useEffect(() => {
+    latestArticleRef.current = article;
+  }, [article]);
+
   const [userId, setUserId] = useState<string>('');
 
   // ดึง user ID เพื่อค้นหา localStorage key ที่ถูกต้อง
@@ -597,6 +814,11 @@ export default function ArticleEditor() {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverInfo, setDragOverInfo] = useState<{ index: number, position: 'top' | 'bottom' } | null>(null);
   const [showSaveToast, setShowSaveToast] = useState<boolean>(false);
+  const [featuredImageModalOpen, setFeaturedImageModalOpen] = useState(false);
+  const [featuredImageUrlInput, setFeaturedImageUrlInput] = useState('https://');
+  const [featuredImageAiPrompt, setFeaturedImageAiPrompt] = useState('');
+  const [isProcessingFeaturedImage, setIsProcessingFeaturedImage] = useState(false);
+  const [isImageModalOpen, setIsImageModalOpen] = useState<boolean>(false);
 
 
   const outlineParts = (article?.content || '').split(/(?=^#{2,3}\s)/m);
@@ -786,14 +1008,14 @@ export default function ArticleEditor() {
       }
 
       if (loadedArticle) {
-        // Extract the first image from markdown to act as cover_image
-        const imageRegex = /!\[.*?\]\((.*?)\)/;
+        // Extract the first image from markdown to act as cover_image ONLY if it's explicitly the AI-generated Cover Image
+        const imageRegex = /!\[(?:Cover Image|Cover|ปกบทความ).*?\]\((.*?)\)/i;
         if (!loadedArticle.cover_image && loadedArticle.content) {
           const match = loadedArticle.content.match(imageRegex);
           if (match) {
             loadedArticle.cover_image = match[1];
-            // Remove the first image from the content so it doesn't show in the WYSIWYG body
-            loadedArticle.content = loadedArticle.content.replace(imageRegex, '').replace(/^\s*[\r\n]/gm, '');
+            // Remove the cover image from the content so it doesn't show in the WYSIWYG body
+            loadedArticle.content = loadedArticle.content.replace(imageRegex, '').trimStart();
           }
         }
         
@@ -969,16 +1191,24 @@ export default function ArticleEditor() {
   }
 
   const handleUpdateField = (field: string, value: string) => {
+    latestArticleRef.current = { ...latestArticleRef.current, [field]: value };
     setArticle((prev: any) => ({ ...prev, [field]: value }));
   };
 
   const handleSave = async () => {
+    const currentArticle = latestArticleRef.current || article;
+    if (!currentArticle) return;
+
     // Save to local state just in case
-    setArticles(prev => prev.map(a => a.id === article.id ? article : a));
+    setArticles(prev => prev.map(a => a.id === currentArticle.id ? currentArticle : a));
     
     // Save to Supabase
     try {
-      await saveArticle(article.title, article.content, 'Completed', article.id);
+      let contentToSave = currentArticle.content || '';
+      if (currentArticle.cover_image) {
+        contentToSave = `![Cover Image](${currentArticle.cover_image})\n\n` + contentToSave;
+      }
+      await saveArticle(currentArticle.title, contentToSave, 'Completed', currentArticle.id);
       setShowSaveToast(true);
       setTimeout(() => setShowSaveToast(false), 3000);
     } catch (e) {
@@ -1036,32 +1266,36 @@ export default function ArticleEditor() {
   };
 
   return (
-    <div className="h-screen w-full bg-[#020617] flex flex-col font-sans overflow-hidden relative selection:bg-emerald-500/30 selection:text-emerald-300 text-slate-200">
-      {/* Immersive Animated Background */}
-      <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900/50 via-[#020617] to-[#020617]">
-        <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[50%] rounded-full bg-emerald-600/10 blur-[120px] mix-blend-screen animate-pulse-slow"></div>
-        <div className="absolute top-[40%] -right-[10%] w-[40%] h-[50%] rounded-full bg-teal-600/10 blur-[120px] mix-blend-screen animate-pulse-slow" style={{ animationDelay: '2s' }}></div>
-        <div className="absolute top-[10%] left-[40%] w-[30%] h-[30%] rounded-full bg-indigo-500/5 blur-[100px] mix-blend-screen"></div>
+    <div className="h-screen w-full bg-slate-50 flex flex-col font-sans overflow-hidden relative selection:bg-emerald-500/30 selection:text-emerald-900 text-slate-800">
+      {/* Immersive Animated Background (Light Mode Smoky Aurora) */}
+      <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-[20%] -left-[10%] w-[70%] h-[70%] rounded-[100%] bg-emerald-400/20 blur-[120px] mix-blend-multiply animate-pulse-slow opacity-80" style={{ transform: 'rotate(-15deg)' }}></div>
+        <div className="absolute top-[40%] -right-[10%] w-[60%] h-[80%] rounded-[100%] bg-teal-400/20 blur-[140px] mix-blend-multiply animate-pulse-slow opacity-70" style={{ animationDelay: '2s', transform: 'rotate(25deg)' }}></div>
+        <div className="absolute -bottom-[20%] left-[20%] w-[50%] h-[60%] rounded-[100%] bg-cyan-400/15 blur-[130px] mix-blend-multiply animate-pulse-slow opacity-60" style={{ animationDelay: '4s' }}></div>
+        <div className="absolute top-[10%] left-[40%] w-[40%] h-[40%] rounded-full bg-indigo-400/10 blur-[100px] mix-blend-multiply"></div>
+        
+        {/* Subtle noise texture */}
+        <div className="absolute inset-0 opacity-[0.015] mix-blend-multiply pointer-events-none" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E")' }}></div>
       </div>
 
       {/* Floating Header */}
       <div className="px-6 sm:px-8 pt-6 pb-2 z-50">
-        <header className="h-20 bg-slate-900/60 backdrop-blur-3xl border border-white/10 rounded-[2rem] px-6 flex items-center justify-between shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
+        <header className="h-20 bg-white/70 backdrop-blur-3xl border border-slate-200/60 rounded-[2rem] px-6 flex items-center justify-between shadow-[0_8px_32px_rgba(0,0,0,0.05)]">
           <div className="flex items-center gap-6">
-            <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="w-12 h-12 bg-white/5 text-slate-300 hover:bg-emerald-500/20 hover:text-emerald-400 hover:shadow-md rounded-2xl transition-all shadow-sm border border-white/5">
+            <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="w-12 h-12 bg-slate-100/50 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 hover:shadow-md rounded-2xl transition-all shadow-sm border border-slate-200/50">
               <ArrowLeft className="w-6 h-6" />
             </Button>
             <div className="flex items-center gap-4">
-              <div className="bg-gradient-to-br from-emerald-400 to-teal-500 p-3 rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.3)] text-slate-950 flex items-center justify-center relative overflow-hidden group">
+              <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-3 rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.2)] text-white flex items-center justify-center relative overflow-hidden group">
                 <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
                 <Sparkles className="w-6 h-6 relative z-10" />
               </div>
               <div className="hidden sm:block">
-                <h1 className="text-xl font-black text-white tracking-tight leading-none mb-1">Workspace</h1>
+                <h1 className="text-xl font-black text-slate-900 tracking-tight leading-none mb-1">Workspace</h1>
                 <div className="flex items-center gap-2">
-                  <Link to="/dashboard" className="text-sm font-bold text-slate-400 hover:text-emerald-400 transition-colors">Overview</Link>
-                  <ChevronRight className="w-3.5 h-3.5 text-slate-600" />
-                  <span className="text-sm font-bold text-slate-200 truncate max-w-[150px]">{article.title || 'Untitled'}</span>
+                  <Link to="/dashboard" className="text-sm font-bold text-slate-500 hover:text-emerald-600 transition-colors">Overview</Link>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                  <span className="text-sm font-bold text-slate-700 truncate max-w-[150px]">{article?.title || 'Untitled'}</span>
                 </div>
               </div>
             </div>
@@ -1089,25 +1323,25 @@ export default function ArticleEditor() {
 
       <div className="flex-1 flex overflow-hidden p-4 sm:p-6 pt-2 gap-6 z-10">
         {/* Left Sidebar (Mini-explorer) */}
-        <aside className="w-16 md:w-[280px] bg-slate-900/40 backdrop-blur-3xl border border-white/10 rounded-[2rem] hidden sm:flex flex-col shrink-0 shadow-[0_8px_32px_rgba(0,0,0,0.2)] overflow-hidden">
+        <aside className="w-16 md:w-[280px] bg-white/70 backdrop-blur-3xl border border-slate-200/60 rounded-[2rem] hidden sm:flex flex-col shrink-0 shadow-[0_8px_32px_rgba(0,0,0,0.05)] overflow-hidden">
           <div className="p-5 space-y-6">
             <nav className="space-y-2">
-              <Link to="/dashboard" className="flex items-center gap-4 px-4 py-3 rounded-[1.25rem] text-slate-400 hover:bg-white/10 hover:shadow-sm hover:text-emerald-400 transition-all font-bold text-sm border border-transparent group">
+              <Link to="/dashboard" className="flex items-center gap-4 px-4 py-3 rounded-[1.25rem] text-slate-500 hover:bg-slate-100 hover:shadow-sm hover:text-emerald-600 transition-all font-bold text-sm border border-transparent group">
                 <Layout className="w-5 h-5 group-hover:scale-110 transition-transform" />
                 <span className="hidden md:inline">Overview</span>
               </Link>
               <div className="pt-6">
                 <p className="px-4 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4 hidden md:block">Content Architecture</p>
-                <Link to="/articles" className="flex items-center gap-4 px-4 py-3 rounded-[1.25rem] bg-emerald-500/10 shadow-sm border border-emerald-500/20 text-emerald-400 transition-all font-bold text-sm mb-4 group relative overflow-hidden">
-                  <div className="absolute inset-0 bg-emerald-500/10 translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300"></div>
+                <Link to="/articles" className="flex items-center gap-4 px-4 py-3 rounded-[1.25rem] bg-emerald-50 shadow-sm border border-emerald-100 text-emerald-600 transition-all font-bold text-sm mb-4 group relative overflow-hidden">
+                  <div className="absolute inset-0 bg-emerald-100/50 translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300"></div>
                   <AlignLeft className="w-5 h-5 relative z-10" />
                   <span className="hidden md:inline relative z-10">All Articles</span>
                 </Link>
                 <div className="md:pl-6 space-y-2 mt-4 hidden md:block h-[calc(100vh-360px)] overflow-y-auto hide-scrollbar relative">
-                  <div className="absolute left-[13px] top-6 bottom-10 w-px bg-slate-700/60"></div>
-                  <div className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 relative bg-slate-800/60 rounded-xl shadow-sm border border-slate-700/50">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 absolute left-[-8px] ring-4 ring-slate-900 shadow-[0_0_8px_rgba(52,211,153,0.5)]" />
-                    <span className="truncate font-black text-white tracking-tight">{article.title || 'Outline'}</span>
+                  <div className="absolute left-[13px] top-6 bottom-10 w-px bg-slate-200"></div>
+                  <div className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-600 relative bg-white rounded-xl shadow-sm border border-slate-200/50">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 absolute left-[-8px] ring-4 ring-slate-50 shadow-[0_0_8px_rgba(16,185,129,0.3)]" />
+                    <span className="truncate font-black text-slate-900 tracking-tight">{article?.title || 'Outline'}</span>
                   </div>
                   <div className="pl-3 pr-1 space-y-1 mt-3 pb-10" onDragLeave={handleDragLeave}>
                     {outlineSections.map((sec, idx) => (
@@ -1121,17 +1355,17 @@ export default function ArticleEditor() {
                           onDragOver={(e) => handleDragOver(e, idx)}
                           onDrop={(e) => handleDrop(e, idx)}
                           onDragEnd={handleDragEnd}
-                          className={`group flex items-center justify-between px-3 py-2.5 rounded-xl transition-all cursor-grab active:cursor-grabbing hover:bg-slate-800/80 hover:shadow-sm border border-transparent hover:border-slate-700/50 relative ${draggedIndex === idx ? 'opacity-30' : ''}`}
+                          className={`group flex items-center justify-between px-3 py-2.5 rounded-xl transition-all cursor-grab active:cursor-grabbing hover:bg-slate-100/80 hover:shadow-sm border border-transparent hover:border-slate-200/50 relative ${draggedIndex === idx ? 'opacity-30' : ''}`}
                         >
-                          <div className={`absolute left-[-13px] top-1/2 -translate-y-1/2 w-2 h-2 rounded-full border-2 border-slate-900 ${sec.level === 3 ? 'bg-slate-600' : 'bg-slate-400'}`}></div>
-                          <span className={`text-[13px] truncate font-bold ${sec.level === 3 ? 'pl-4 text-slate-500' : 'text-slate-300'}`} title={sec.title}>
+                          <div className={`absolute left-[-13px] top-1/2 -translate-y-1/2 w-2 h-2 rounded-full border-2 border-slate-50 ${sec.level === 3 ? 'bg-slate-300' : 'bg-slate-400'}`}></div>
+                          <span className={`text-[13px] truncate font-bold ${sec.level === 3 ? 'pl-4 text-slate-400' : 'text-slate-700'}`} title={sec.title}>
                             {sec.title}
                           </span>
-                          <div className="hidden group-hover:flex items-center gap-1 shrink-0 ml-1 bg-slate-800 backdrop-blur-sm rounded-lg shadow-sm border border-slate-700 p-0.5 absolute right-1">
-                            <button onClick={() => moveSection(idx, 'up')} disabled={idx === 0} className="text-slate-400 hover:text-emerald-400 disabled:opacity-30 p-1 rounded hover:bg-slate-700 transition-colors">
+                          <div className="hidden group-hover:flex items-center gap-1 shrink-0 ml-1 bg-white backdrop-blur-sm rounded-lg shadow-sm border border-slate-200 p-0.5 absolute right-1">
+                            <button onClick={() => moveSection(idx, 'up')} disabled={idx === 0} className="text-slate-500 hover:text-emerald-600 disabled:opacity-30 p-1 rounded hover:bg-slate-50 transition-colors">
                               <ChevronUp className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => moveSection(idx, 'down')} disabled={idx === outlineSections.length - 1} className="text-slate-400 hover:text-emerald-400 disabled:opacity-30 p-1 rounded hover:bg-slate-700 transition-colors">
+                            <button onClick={() => moveSection(idx, 'down')} disabled={idx === outlineSections.length - 1} className="text-slate-500 hover:text-emerald-600 disabled:opacity-30 p-1 rounded hover:bg-slate-50 transition-colors">
                               <ChevronDown className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -1142,8 +1376,8 @@ export default function ArticleEditor() {
                       </div>
                     ))}
                     {outlineSections.length === 0 && (
-                      <div className="px-4 py-8 text-center bg-slate-800/40 rounded-xl border border-dashed border-slate-700">
-                        <p className="text-[12px] font-bold text-slate-500">No headings found</p>
+                      <div className="px-4 py-8 text-center bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                        <p className="text-[12px] font-bold text-slate-400">No headings found</p>
                       </div>
                     )}
                   </div>
@@ -1154,21 +1388,21 @@ export default function ArticleEditor() {
         </aside>
 
         {/* Main Editor Component */}
-        <main className="flex-1 flex flex-col md:flex-row overflow-hidden bg-slate-900/60 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.3)] relative">
+        <main className="flex-1 flex flex-col md:flex-row overflow-hidden bg-white/80 backdrop-blur-3xl border border-slate-200/60 rounded-[2.5rem] shadow-[0_8px_32px_rgba(0,0,0,0.05)] relative">
           {/* Editor Body */}
           <div className="flex-1 overflow-y-auto px-6 py-10 sm:px-14 lg:px-20 flex flex-col hide-scrollbar relative z-10">
             <div className="mx-auto w-full max-w-4xl space-y-10">
               {/* Clean Info Header */}
-              <div className="flex items-center justify-between border-b border-white/10 pb-6 shrink-0 sticky top-0 bg-slate-900/80 backdrop-blur-2xl z-20 -mx-6 px-6 sm:-mx-14 sm:px-14 lg:-mx-20 lg:px-20 pt-4 rounded-b-3xl shadow-sm">
+              <div className="flex items-center justify-between border-b border-slate-200/60 pb-6 shrink-0 -mt-10 bg-white/90 backdrop-blur-2xl -mx-6 px-6 sm:-mx-14 sm:px-14 lg:-mx-20 lg:px-20 pt-6 shadow-sm">
                 <div className="flex items-center gap-2">
-                  <div className="flex gap-2 bg-slate-800/60 p-1.5 rounded-2xl shadow-[inset_0_2px_10px_rgba(0,0,0,0.2)] -ml-2 -my-2">
+                  <div className="flex gap-2 bg-slate-100/80 p-1.5 rounded-2xl shadow-[inset_0_2px_10px_rgba(0,0,0,0.02)] -ml-2 -my-2">
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => setIsEditing(false)}
                       className={`h-9 px-4 text-xs font-bold rounded-xl transition-all ${!isEditing
-                          ? "bg-slate-700 text-white shadow-md shadow-slate-950/50"
-                          : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+                          ? "bg-white text-emerald-600 shadow-sm border border-slate-200/50"
+                          : "text-slate-500 hover:text-slate-700 hover:bg-white/50"
                         }`}
                     >
                       <Eye className="w-3.5 h-3.5 mr-1.5" /> ดูตัวอย่าง (Preview)
@@ -1178,8 +1412,8 @@ export default function ArticleEditor() {
                       size="sm"
                       onClick={() => setIsEditing(true)}
                       className={`h-9 px-4 text-xs font-bold rounded-xl transition-all ${isEditing
-                          ? "bg-slate-700 text-white shadow-md shadow-slate-950/50"
-                          : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+                          ? "bg-white text-emerald-600 shadow-sm border border-slate-200/50"
+                          : "text-slate-500 hover:text-slate-700 hover:bg-white/50"
                         }`}
                     >
                       <Pencil className="w-3.5 h-3.5 mr-1.5" /> แก้ไขสด (Edit)
@@ -1191,12 +1425,12 @@ export default function ArticleEditor() {
                     size="sm"
                     onClick={handleCopyToWordNotion}
                     disabled={isCopying}
-                    className="h-10 px-4 text-xs font-bold text-slate-300 hover:text-emerald-400 hover:scale-[1.02] border-white/10 bg-slate-800/60 hover:bg-slate-800 rounded-xl shadow-sm transition-all flex items-center gap-2 ml-4 disabled:opacity-50 disabled:pointer-events-none"
+                    className="h-10 px-4 text-xs font-bold text-slate-600 hover:text-emerald-600 hover:scale-[1.02] border-slate-200 bg-white hover:bg-slate-50 rounded-xl shadow-sm transition-all flex items-center gap-2 ml-4 disabled:opacity-50 disabled:pointer-events-none"
                   >
                     {isCopying ? (
-                      <><div className="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" /> กำลังอัปโหลด...</>
+                      <><div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" /> กำลังอัปโหลด...</>
                     ) : (
-                      <><Copy className="w-4 h-4 text-purple-400 animate-pulse" /> คัดลอกไป Word/Notion ✨</>
+                      <><Copy className="w-4 h-4 text-purple-500 animate-pulse" /> คัดลอกไป Word/Notion ✨</>
                     )}
                   </Button>
                 </div>
@@ -1212,34 +1446,34 @@ export default function ArticleEditor() {
                       rows={1}
                       value={article.title || ''}
                       onChange={(e) => handleUpdateField('title', e.target.value)}
-                      className="w-full text-4xl sm:text-5xl font-black text-white tracking-tight leading-snug border-0 border-b-2 border-dashed border-slate-700 focus:border-emerald-400 hover:bg-white/5 p-4 -ml-4 rounded-2xl transition-all focus-visible:ring-0 resize-none bg-transparent outline-none focus:outline-none placeholder:text-slate-600 font-sans overflow-hidden"
+                      className="w-full text-4xl sm:text-5xl font-black text-slate-900 tracking-tight leading-snug border-0 border-b-2 border-dashed border-slate-200 focus:border-emerald-500 hover:bg-slate-50 p-4 -ml-4 rounded-2xl transition-all focus-visible:ring-0 resize-none bg-transparent outline-none focus:outline-none placeholder:text-slate-300 font-sans overflow-hidden"
                       placeholder="ชื่อบทความ (Article Title)..."
                     />
                   ) : (
-                    <h1 className="text-4xl sm:text-5xl font-black text-white tracking-tight leading-snug font-sans">
+                    <h1 className="text-4xl sm:text-5xl font-black text-slate-900 tracking-tight leading-snug font-sans">
                       {article.title || 'Untitled Article'}
                     </h1>
                   )}
 
                   {/* Details row matching Preview exactly */}
-                  <div className="flex items-center gap-3 text-xs text-slate-400 font-bold font-sans tracking-wide uppercase">
+                  <div className="flex items-center gap-3 text-xs text-slate-500 font-bold font-sans tracking-wide uppercase">
                     <span>วันที่สร้าง: {article.date || new Date().toLocaleDateString('th-TH')}</span>
-                    <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
-                    <span className="text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-xl shadow-sm">Keyword: {article.keyword || 'None'}</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+                    <span className="text-emerald-600 bg-emerald-50 px-3 py-1 rounded-xl shadow-sm">Keyword: {article.keyword || 'None'}</span>
                   </div>
                 </div>
 
-                <Separator className="bg-white/10" />
+                <Separator className="bg-slate-100" />
 
                 {isEditing ? (
-                  <div className="bg-slate-900/50 rounded-3xl p-2 shadow-[inset_0_2px_10px_rgba(0,0,0,0.2)]">
+                  <div className="bg-slate-50/80 border border-slate-100 rounded-3xl p-2 shadow-inner">
                     <WysiwygEditor
                       content={article.content || ''}
                       onChange={(markdown) => handleUpdateField('content', markdown)}
                     />
                   </div>
                 ) : (
-                  <div className="markdown-body max-w-none text-lg leading-relaxed text-slate-300 font-sans pb-16">
+                  <div className="markdown-body max-w-none text-lg leading-relaxed text-slate-700 font-sans pb-16">
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm, remarkBreaks]}
                       rehypePlugins={[rehypeRaw]}
@@ -1256,78 +1490,83 @@ export default function ArticleEditor() {
           </div>
 
           {/* Right Sidebar (Controls) */}
-          <aside className="w-full md:w-[320px] bg-slate-900/80 backdrop-blur-3xl border-l border-white/10 py-8 px-8 overflow-y-auto space-y-10 hide-scrollbar z-10 shadow-[-10px_0_30px_-15px_rgba(0,0,0,0.5)] relative">
+          <aside className="w-full md:w-[320px] bg-white/60 backdrop-blur-3xl border-l border-slate-200/60 py-8 px-8 overflow-y-auto space-y-10 hide-scrollbar z-10 shadow-[-10px_0_30px_-15px_rgba(0,0,0,0.05)] relative">
             {/* Action Header in Sidebar */}
-            <div className="flex items-center justify-between text-xs font-black text-slate-500 uppercase tracking-widest mb-4 border-b border-white/10 pb-4">
-              <span className="text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-lg border border-emerald-500/20">Publish Settings</span>
-              <Settings className="w-4 h-4 text-slate-500" />
+            <div className="flex items-center justify-between text-xs font-black text-slate-500 uppercase tracking-widest mb-4 border-b border-slate-200 pb-4">
+              <span className="text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-200">Publish Settings</span>
+              <Settings className="w-4 h-4 text-slate-400" />
             </div>
 
             <div className="space-y-8">
               <div className="space-y-3">
-                <Label className="text-sm font-black text-slate-300 flex items-center justify-between">
+                <Label className="text-sm font-black text-slate-700 flex items-center justify-between">
                   Tags
                 </Label>
                 <div className="grid grid-cols-2 gap-3">
-                  <Button variant="outline" className="h-12 justify-between text-slate-400 font-bold text-xs border-0 bg-slate-800 hover:bg-slate-700 rounded-2xl shadow-sm transition-all">
+                  <Button variant="outline" className="h-12 justify-between text-slate-600 font-bold text-xs border border-slate-200 bg-white hover:bg-slate-50 rounded-2xl shadow-sm transition-all">
                     Select tag <ChevronDown className="w-4 h-4 opacity-50" />
                   </Button>
-                  <Button variant="outline" className="h-12 justify-center text-emerald-400 font-bold text-xs border border-dashed border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-300 rounded-2xl transition-all">
+                  <Button variant="outline" className="h-12 justify-center text-emerald-600 font-bold text-xs border border-dashed border-emerald-200 bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-700 rounded-2xl transition-all">
                     + New Tag
                   </Button>
                 </div>
               </div>
 
               <div className="space-y-3">
-                <Label className="text-sm font-black text-slate-300">Focus Keyword</Label>
+                <Label className="text-sm font-black text-slate-700">Focus Keyword</Label>
                 <Input
                   value={article.keyword || ''}
                   onChange={(e) => handleUpdateField('keyword', e.target.value)}
                   placeholder="Enter main keyword..."
-                  className="h-12 bg-slate-800 border-0 shadow-inner rounded-2xl text-sm font-medium text-white focus-visible:ring-emerald-500/50 focus-visible:ring-4 transition-all"
+                  className="h-12 bg-white border border-slate-200 shadow-sm rounded-2xl text-sm font-medium text-slate-900 focus-visible:ring-emerald-500/30 focus-visible:ring-4 focus-visible:border-emerald-400 transition-all"
                 />
               </div>
 
               <div className="space-y-3">
-                <Label className="text-sm font-black text-slate-300">Meta Description</Label>
+                <Label className="text-sm font-black text-slate-700">Meta Description</Label>
                 <Textarea
                   value={article.meta_description || ''}
                   onChange={(e) => handleUpdateField('meta_description', e.target.value)}
                   placeholder="Brief summary for search results..."
-                  className="min-h-[140px] p-4 text-sm leading-relaxed bg-slate-800 border-0 shadow-inner rounded-2xl text-slate-300 placeholder:text-slate-500 focus-visible:ring-emerald-500/50 focus-visible:ring-4 transition-all resize-none"
+                  className="min-h-[140px] p-4 resize-none bg-white border border-slate-200 shadow-sm rounded-2xl text-sm leading-relaxed font-medium text-slate-900 placeholder:text-slate-400 focus-visible:ring-emerald-500/30 focus-visible:ring-4 focus-visible:border-emerald-400 transition-all"
                 />
               </div>
 
               <div className="space-y-3">
-                <Label className="text-sm font-black text-slate-300">Featured Image</Label>
-                <div className="aspect-video bg-slate-800 rounded-[1.5rem] overflow-hidden relative group border border-white/5 shadow-sm p-1">
-                  <div className="w-full h-full rounded-2xl overflow-hidden relative">
+                <Label className="text-sm font-black text-slate-700">Featured Image</Label>
+                <div 
+                  className="aspect-video bg-white rounded-[1.5rem] overflow-hidden relative group border border-slate-200 shadow-sm cursor-pointer"
+                >
+                  <div className="w-full h-full overflow-hidden relative">
                     <MarkdownImage
-                      src={article.cover_image || `https://image.pollinations.ai/prompt/realistic-photo-for-${(article.keyword || 'article').replace(/ /g, '-')}-workspace-warehouse?width=800&height=450&nologo=true`}
+                      src={article?.cover_image || ''}
                       alt="Cover"
                       className="w-full h-full object-cover m-0 shadow-none"
                     />
-                    <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all duration-300 backdrop-blur-sm">
-                      <Button className="bg-emerald-500 text-slate-950 hover:bg-emerald-400 font-bold rounded-xl shadow-xl transform translate-y-4 group-hover:translate-y-0 transition-all duration-300">
-                        <ImageIcon className="w-4 h-4 mr-2" /> Change Image
+                    <div className="absolute inset-0 bg-slate-900/50 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-3 transition-all duration-300 backdrop-blur-sm">
+                      <Button onClick={() => setIsImageModalOpen(true)} className="bg-white/90 text-slate-900 hover:bg-white px-4 py-2 rounded-xl font-bold text-sm shadow-xl transform translate-y-4 group-hover:translate-y-0 transition-all duration-300 flex items-center gap-2">
+                        <Eye className="w-4 h-4" /> ดูภาพเต็ม
+                      </Button>
+                      <Button onClick={() => setFeaturedImageModalOpen(true)} className="bg-emerald-600/90 text-white hover:bg-emerald-600 px-4 py-2 rounded-xl font-bold text-sm shadow-xl transform translate-y-4 group-hover:translate-y-0 transition-all duration-300 delay-75 flex items-center gap-2">
+                        <ImageIcon className="w-4 h-4" /> เปลี่ยนรูปภาพ
                       </Button>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-8 space-y-4 border-t border-white/10">
-                <Button onClick={handleSave} className="w-full h-14 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-sm rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all transform hover:scale-[1.02]">
+              <div className="pt-8 space-y-4 border-t border-slate-200">
+                <Button onClick={handleSave} className="w-full h-14 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-black text-sm rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all transform hover:scale-[1.02]">
                   <Send className="w-4 h-4 mr-2" /> Publish Article
                 </Button>
                 <div className="flex items-center gap-3">
-                  <Button size="icon" variant="outline" className="h-12 w-12 rounded-2xl bg-slate-800 border-0 text-slate-400 hover:text-emerald-400 hover:bg-slate-700 shadow-sm transition-all group">
+                  <Button size="icon" variant="outline" className="h-12 w-12 rounded-2xl bg-white border border-slate-200 text-slate-500 hover:text-emerald-600 hover:bg-slate-50 shadow-sm transition-all group">
                     <DownloadCloud className="w-5 h-5 group-hover:scale-110 transition-transform" />
                   </Button>
-                  <Button size="icon" variant="outline" className="h-12 w-12 rounded-2xl bg-slate-800 border-0 text-slate-400 hover:text-emerald-400 hover:bg-slate-700 shadow-sm transition-all group">
+                  <Button size="icon" variant="outline" className="h-12 w-12 rounded-2xl bg-white border border-slate-200 text-slate-500 hover:text-emerald-600 hover:bg-slate-50 shadow-sm transition-all group">
                     <Share2 className="w-5 h-5 group-hover:scale-110 transition-transform" />
                   </Button>
-                  <Button size="icon" variant="outline" className="h-12 w-12 rounded-2xl bg-slate-800 border-0 text-slate-400 hover:text-emerald-400 hover:bg-slate-700 shadow-sm transition-all ml-auto group">
+                  <Button size="icon" variant="outline" className="h-12 w-12 rounded-2xl bg-white border border-slate-200 text-slate-500 hover:text-emerald-600 hover:bg-slate-50 shadow-sm transition-all ml-auto group">
                     <MoreVertical className="w-5 h-5 group-hover:scale-110 transition-transform" />
                   </Button>
                 </div>
@@ -1349,6 +1588,132 @@ export default function ArticleEditor() {
           </div>
         </div>
       )}
+
+      {/* Image Modal */}
+      <Dialog open={isImageModalOpen} onOpenChange={setIsImageModalOpen}>
+        <DialogContent className="max-w-5xl bg-transparent border-0 shadow-none p-0 flex items-center justify-center overflow-hidden">
+          <div className="relative group w-full flex justify-center">
+            <MarkdownImage 
+              src={article?.cover_image || ''} 
+              alt="Full Cover" 
+              className="max-w-full max-h-[85vh] rounded-[2rem] shadow-2xl object-contain border-4 border-white/20"
+              style={{ margin: 0, boxShadow: 'none' }}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Featured Image Editor Modal */}
+      <Dialog open={featuredImageModalOpen} onOpenChange={setFeaturedImageModalOpen}>
+        <DialogContent className="max-w-md bg-white border border-slate-100 rounded-3xl p-6 shadow-xl">
+          <h3 className="text-lg font-bold text-slate-800 mb-4">เปลี่ยนรูปภาพปก (Featured Image)</h3>
+          
+          <Tabs defaultValue="url" className="w-full">
+            <TabsList className="w-full grid grid-cols-3 mb-4 bg-slate-100 p-1 rounded-xl">
+              <TabsTrigger value="url" className="rounded-lg text-xs font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm">URL</TabsTrigger>
+              <TabsTrigger value="upload" className="rounded-lg text-xs font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm">อัปโหลด</TabsTrigger>
+              <TabsTrigger value="ai" className="rounded-lg text-xs font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm">AI</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="url" className="space-y-4">
+              <p className="text-sm text-slate-500">ระบุ URL ของรูปภาพปกใหม่</p>
+              <Input 
+                value={featuredImageUrlInput} 
+                onChange={(e) => setFeaturedImageUrlInput(e.target.value)} 
+                placeholder="https://example.com/image.jpg"
+                className="h-12 rounded-xl bg-slate-50 border-slate-200"
+                onKeyDown={(e) => { 
+                  if (e.key === 'Enter' && featuredImageUrlInput !== 'https://') { 
+                    handleUpdateField('cover_image', featuredImageUrlInput); 
+                    setFeaturedImageModalOpen(false); 
+                  } 
+                }}
+              />
+              <div className="flex justify-end gap-3 mt-2">
+                <Button variant="ghost" onClick={() => setFeaturedImageModalOpen(false)} className="rounded-xl">ยกเลิก</Button>
+                <Button onClick={() => { if (featuredImageUrlInput !== 'https://') { handleUpdateField('cover_image', featuredImageUrlInput); setFeaturedImageModalOpen(false); } }} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-md">ตั้งเป็นภาพปก</Button>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="upload" className="space-y-4">
+              <p className="text-sm text-slate-500">อัปโหลดรูปภาพจากเครื่องของคุณ</p>
+              <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center bg-slate-50 relative hover:bg-slate-100 transition-colors cursor-pointer">
+                <ImageIcon className="w-8 h-8 text-slate-400 mb-2" />
+                <span className="text-sm font-medium text-slate-600">{isProcessingFeaturedImage ? 'กำลังอัปโหลด...' : 'คลิกเพื่อเลือกไฟล์รูปภาพ'}</span>
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed" 
+                  disabled={isProcessingFeaturedImage}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setIsProcessingFeaturedImage(true);
+                    try {
+                      const reader = new FileReader();
+                      reader.onloadend = async () => {
+                        const base64data = reader.result as string;
+                        const url = await uploadImageToSupabase(base64data);
+                        handleUpdateField('cover_image', url);
+                        setFeaturedImageModalOpen(false);
+                        setIsProcessingFeaturedImage(false);
+                      };
+                      reader.readAsDataURL(file);
+                    } catch (err) {
+                      console.error(err);
+                      setIsProcessingFeaturedImage(false);
+                    }
+                  }}
+                />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="ai" className="space-y-4">
+              <p className="text-sm text-slate-500">สร้างภาพปกใหม่ด้วย AI (Seeddream)</p>
+              <Textarea 
+                value={featuredImageAiPrompt} 
+                onChange={(e) => setFeaturedImageAiPrompt(e.target.value)} 
+                placeholder="อธิบายภาพปกที่คุณต้องการ..."
+                className="min-h-[100px] rounded-xl bg-slate-50 border-slate-200"
+              />
+              <div className="flex justify-end gap-3 mt-2">
+                <Button variant="ghost" onClick={() => setFeaturedImageModalOpen(false)} className="rounded-xl">ยกเลิก</Button>
+                <Button 
+                  disabled={isProcessingFeaturedImage || !featuredImageAiPrompt.trim()} 
+                  onClick={async () => {
+                    if (!featuredImageAiPrompt.trim()) return;
+                    setIsProcessingFeaturedImage(true);
+                    try {
+                      const response = await fetch('/api/seeddream-image', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ prompt: featuredImageAiPrompt })
+                      });
+                      const data = await response.json();
+                      if (!response.ok || !data.url) throw new Error(data.error || "Failed to generate image");
+
+                      const finalUrl = await uploadImageToSupabase(data.url, featuredImageAiPrompt);
+                      handleUpdateField('cover_image', finalUrl);
+                      setFeaturedImageModalOpen(false);
+                    } catch (err) {
+                      console.error(err);
+                      alert('เกิดข้อผิดพลาดในการสร้างภาพ: ' + (err instanceof Error ? err.message : 'Unknown error'));
+                    }
+                    setIsProcessingFeaturedImage(false);
+                  }} 
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-md flex items-center gap-2"
+                >
+                  {isProcessingFeaturedImage ? (
+                    <><div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> กำลังสร้างภาพ...</>
+                  ) : (
+                    '✨ สร้างเป็นภาพปก'
+                  )}
+                </Button>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

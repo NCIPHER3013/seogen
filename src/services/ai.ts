@@ -52,7 +52,9 @@ function fixThaiTypos(text: string): string {
   // ชั้นที่ 1 — Regex generic: วรรณยุกต์ซ้ำ, พยัญชนะซ้ำ, สระซ้ำ, ๆ ซ้ำ
   text = text.replace(/([่้๊๋ัีึื])\1+/g, '$1');           // วรรณยุกต์ซ้ำ เช่น ่่ ัั ็็
   text = text.replace(/([ก-ฮ])(\1){2,}/g, '$1$1');         // พยัญชนะซ้ำ 3+ ตัว → 2 ตัว (ชื่อย่อย)
-  text = text.replace(/([ก-ฮ])\1(?=[^ก-ฮ])/g, '$1');       // พยัญชนะซ้ำ 2 ตัว → 1 ตัว
+  // NOTE: ลบ regex "พยัญชนะซ้ำ 2 ตัว → 1 ตัว" ออก เพราะทำลายคำไทยที่ถูกต้อง
+  // เช่น แบบ(บบ) โรงงาน(งง) เกมมือถือ(มม) สมมุติ(มม) กรรม(รร) ชั้นนำ(นน) บันไดดัง(ดด)
+  // ภาษาไทยมีคำที่มีพยัญชนะเดียวกันซ้ำ 2 ตัวติดกันโดยชอบธรรม ห้ามตัด
   text = text.replace(/(เกี่ยว)ว+/g, '$1');                // สระซ้ำ เช่น เกี่ยวว → เกี่ยว
   text = text.replace(/(ๆ){2,}/g, 'ๆ');                    // ๆ ซ้ำ
   text = text.replace(/([a-zA-Z])\1{2,}/g, '$1$1');        // อังกฤษซ้ำ 3+ → 2
@@ -337,7 +339,7 @@ async function generateSingleImage(
       if (base64) {
         let dataUri = `data:${mimeType};base64,${base64}`;
         try {
-          dataUri = await compressBase64Image(dataUri, 900, 0.70);
+          dataUri = await compressBase64Image(dataUri, 1440, 0.85);
         } catch (cErr) {
           console.warn("Compression failed", cErr);
         }
@@ -443,6 +445,32 @@ function redistributeImages(markdown: string): string {
   return result.join('\n');
 }
 
+// Regex ที่ทนทาน — รองรับ marker ที่ AI สร้างผิดรูปแบบหลายแบบ:
+//  1. [GEMINI_IMAGE_PROMPT: prompt | 16:9]            ← มาตรฐาน
+//  2. [GEMINI_IMAGE_PROMPT: prompt | 16:9)            ← ปิดผิดด้วย )
+//  3. [GEMINI_IMAGE_PROMPT: prompt, 16:9] | 16:9)      ← AR ซ้ำ (อยู่ใน prompt + ข้างนอก)
+//  4. [GEMINI_IMAGE_PROMPT: prompt, 16:9]             ← AR อยู่ข้างใน prompt อย่างเดียว
+const IMAGE_MARKER_REGEX = /\[GEMINI_IMAGE_PROMPT:\s*([\s\S]+?)\s*(?:\|\s*(\d+:\d+)\s*)?[\]\)](?:\s*\|\s*\d+:\d+\s*\)?)?/g;
+
+// Parse marker ที่ AI สร้างมา (อาจผิดรูปแบบ) ให้ได้ prompt สะอาด + AR ที่ถูกต้อง
+function parseImageMatch(rawPrompt: string, rawAr: string | undefined, fallbackAr: string): { prompt: string; ar: string } {
+  let prompt = rawPrompt.trim();
+  // ล้าง AR และ `]` ที่ AI อาจใส่ติดมาใน prompt (เช่น "prompt, 16:9]" → "prompt")
+  prompt = prompt.replace(/\s*,?\s*\d+:\d+\s*\]?\s*$/i, '').trim();
+  prompt = prompt.replace(/\]+$/, '').trim();
+
+  // หา AR — ลำดับความสำคัญ: จาก `|` > จาก prompt ดั้งเดิม > fallback
+  let ar = rawAr;
+  if (!ar) {
+    const arMatch = rawPrompt.match(/(\d+:\d+)\s*\]?\s*$/);
+    ar = arMatch?.[1];
+  }
+  if (!ar || !["1:1", "16:9", "4:3", "3:4", "9:16"].includes(ar)) {
+    ar = ["1:1", "16:9", "4:3", "3:4", "9:16"].includes(fallbackAr) ? fallbackAr : "1:1";
+  }
+  return { prompt, ar };
+}
+
 export async function generateArticle(
   keyword: string,
   title: string | undefined,
@@ -524,6 +552,8 @@ KEYWORD INTEGRATION:
 FORMATTING RULES:
 - CRITICAL WRITING GUIDELINES: Do NOT hallucinate facts or write nonsensical content. The article must be highly logical, factually correct, and use appropriate, professional terminology. Avoid rambling, repeating points needlessly, or writing "mushy" content.
 - NEVER translate English idioms or technical terms literally. Use natural, professional Thai industry jargon. Do NOT invent new words or use archaic terms.
+${isThai ? `- CRITICAL THAI SPELLING RULE: You MUST write every Thai word COMPLETELY. Never drop or omit the final character of any Thai word. For example, ALWAYS write "การออกแบบ" (never "การออกแบ"), "หรืออาคาร" (never "หรือาคาร"), "เกมมือถือ" (never "เกมือถือ"), "โรงงาน" (never "โรงาน"). Double-check every word before outputting.
+- Always insert a space after words ending in "การ", "การณ์", "ภัย", "บันได" and before the next word or sentence to avoid words merging together.` : ''}
 
 ${isThai ? `- For Thai articles, use these Thai labels for standard sections: 
     "Key Takeaways" -> "สรุปประเด็นสำคัญ"
@@ -554,11 +584,21 @@ ${config.sitemaps && config.sitemaps.length > 0 ? `Sitemaps:\n- ${config.sitemap
 Distribute roughly ${config.linksPerH2 ?? 2} links per H2 section.` : ''}
 
 IMAGE INSTRUCTIONS:
-Always use standard Markdown image syntax: ![Alt Text](URL)
-${config.coverToggle ? `- MUST include a COVER IMAGE at the very beginning of the article. Use this exact syntax replacing {image-prompt} with a highly descriptive visual prompt in English tailored for an AI image generator (e.g. realistic photo of a forklift in a modern warehouse): ![Cover Image]([GEMINI_IMAGE_PROMPT: {image-prompt} | ${config.aspectRatio}])` : '- Do NOT include a cover image.'}
-${config.inlineCount > 0 ? `- MUST insert ${config.inlineCount} INLINE IMAGES distributed EVENLY across the article. Do NOT put all images at the end.
-- Place one image under each H2 heading spread throughout the article (e.g., after the 1st H2, after the 3rd H2, etc.).
-- Use syntax: ![Related Alt Text]([GEMINI_IMAGE_PROMPT: {image-prompt} | 16:9]). Replace {image-prompt} with a highly descriptive visual prompt in English relevant to that specific section.
+CRITICAL IMAGE MARKER RULES (read carefully to avoid errors):
+- You MUST NOT use real image URLs. You MUST use the exact placeholder format below.
+- The image placeholder format MUST be exactly: ![Alt Text]([GEMINI_IMAGE_PROMPT: <english prompt here> | <aspect-ratio>])
+- The aspect-ratio appears ONLY ONCE, AFTER the pipe character, then closing bracket ]
+- NEVER write the aspect-ratio inside the prompt text itself
+- The marker MUST end with ], NEVER with )
+- Correct example: ![Warehouse Forklift]([GEMINI_IMAGE_PROMPT: realistic photo of a forklift in a modern warehouse with shelves | 16:9])
+- WRONG (do not do this): ![Alt]([GEMINI_IMAGE_PROMPT: forklift photo, 16:9] | 16:9)
+${config.coverToggle ? `- MUST include 1 COVER IMAGE at the very beginning of the article. Copy this template and replace only the <english prompt here> part: ![Cover Image]([GEMINI_IMAGE_PROMPT: <english prompt here> | ${config.aspectRatio}])` : '- Do NOT include a cover image.'}
+${config.inlineCount > 0 ? `- MUST insert EXACTLY ${config.inlineCount} INLINE IMAGES distributed EVENLY across the article body.
+- TOTAL IMAGES REQUIRED: ${(config.coverToggle ? 1 : 0) + config.inlineCount} images (${config.coverToggle ? '1 Cover Image + ' : ''}${config.inlineCount} Inline Images). Do NOT generate fewer images than requested!
+- Place one image under each H2 heading spread throughout the article.
+- Use this template for each image (replace only the <english prompt here> part, keep the same aspect-ratio ${config.aspectRatio || '16:9'}): ![Related Alt Text]([GEMINI_IMAGE_PROMPT: <english prompt here> | ${config.aspectRatio || '16:9'}])
+- CRITICAL STRICT RULE: The image prompt (<english prompt here>) MUST BE 100% IN ENGLISH. Do NOT use Thai. Seeddream only understands English. If you use Thai, the image will be completely wrong.
+- The image prompt must be highly descriptive and relevant to the section content. Do NOT include any text, words, or letters in the generated image.
 - CRITICAL: Images MUST be distributed across the article body, NOT grouped together at the end.` : '- Do NOT include inline images.'}
 `;
 
@@ -587,7 +627,7 @@ Output the article in Markdown format. Use proper heading tags (H1, H2, H3), bul
     // เก็บ promise สำหรับรูปภาพที่เริ่ม generate แล้วระหว่าง streaming
     const earlyImagePromises: Map<number, Promise<string>> = new Map();
     const earlyImageMatches: Array<{ prompt: string, ar: string }> = [];
-    const imageRegexLive = /\[GEMINI_IMAGE_PROMPT:\s*(.+?)\s*\|\s*(.+?)\]/g;
+    const imageRegexLive = new RegExp(IMAGE_MARKER_REGEX.source, 'g');
     const detectedImageKeys = new Set<string>(); // track รูปที่ตรวจจับแล้ว ป้องกัน scan ซ้ำ
 
     try {
@@ -649,13 +689,13 @@ Output the article in Markdown format. Use proper heading tags (H1, H2, H3), bul
                     imageRegexLive.lastIndex = 0;
                     let liveMatch;
                     while ((liveMatch = imageRegexLive.exec(finalMarkdown)) !== null) {
-                      const imageKey = liveMatch[1].trim() + '|' + liveMatch[2].trim();
+                      const parsed = parseImageMatch(liveMatch[1], liveMatch[2], config.aspectRatio || '1:1');
+                      const imageKey = parsed.prompt + '|' + parsed.ar;
                       if (detectedImageKeys.has(imageKey)) continue; // skip รูปที่เคย detect แล้ว
                       detectedImageKeys.add(imageKey);
                       const imgIdx = earlyImageMatches.length;
-                      const imgPrompt = liveMatch[1].trim();
-                      let ar = liveMatch[2].trim();
-                      if (!["1:1", "16:9", "4:3", "3:4", "9:16"].includes(ar)) ar = "1:1";
+                      const imgPrompt = parsed.prompt;
+                      const ar = parsed.ar;
                       earlyImageMatches.push({ prompt: imgPrompt, ar });
                       // เริ่มสร้างรูปภาพทันที (parallel กับ text stream)
                       earlyImagePromises.set(imgIdx, scheduleImage(() => generateSingleImage(imgIdx, imgPrompt, ar, config, resolvedImageApiPrompt)));
@@ -722,14 +762,13 @@ Output the article in Markdown format. Use proper heading tags (H1, H2, H3), bul
         finalMarkdown = fixThaiTypos(finalMarkdown);
       }
 
-      // AI Proofreading — ส่งบทความกลับให้ AI ตรวจและแก้คำผิด/คำตก (รองรับทุกภาษา)
-      // แก้ปัญหา DeepSeek V4 Flash ที่ตัดตัวอักษรตัวสุดท้ายของคำที่ regex จับไม่ได้
-      onChunk?.(finalMarkdown, 'text');
-      // บังคับใช้ global settings สำหรับ proofread เหมือนกัน (ส่ง marker '__GLOBAL_TEXT__')
-      const proofreadApiKey = '__USE_GLOBAL__';
-      const proofreadModel = '__GLOBAL_TEXT__';
-      finalMarkdown = await proofreadWithAI(finalMarkdown, config, proofreadApiKey, proofreadModel);
-      onChunk?.(finalMarkdown, 'text');
+      // NOTE: AI Proofreading ถูกปิดไว้ชั่วคราว
+      // เหตุผล: การใช้ model เดียวกันสำหรับ generate + proofread ไม่ได้ผล
+      // เพราะ AI ที่ generate คำผิดออกมา จะมองว่าคำผิดนั้น "ถูกต้อง" อีกครั้งตอน proofread
+      // หากจะเปิดใช้ ต้องใช้ model อื่นสำหรับ proofreading (เช่น GPT-4o-mini)
+      // onChunk?.(finalMarkdown, 'text');
+      // finalMarkdown = await proofreadWithAI(finalMarkdown, config, '__USE_GLOBAL__', '__GLOBAL_TEXT__');
+      // onChunk?.(finalMarkdown, 'text');
     } catch (restError: any) {
       console.warn("REST API text generation failed:", restError);
       throw restError;
@@ -737,7 +776,18 @@ Output the article in Markdown format. Use proper heading tags (H1, H2, H3), bul
 
     // Post-processing: แทนที่ image placeholders ด้วยรูปภาพที่สร้างแล้ว
     onChunk?.(finalMarkdown, 'image');
-    const imageRegex = /\[GEMINI_IMAGE_PROMPT:\s*(.+?)\s*\|\s*(.+?)\]/g;
+    
+    // Check if AI missed generating images and append missing ones
+    const expectedImages = config.inlineCount + (config.coverToggle ? 1 : 0);
+    const existingMatches = [...finalMarkdown.matchAll(new RegExp(IMAGE_MARKER_REGEX.source, 'g'))];
+    if (existingMatches.length < expectedImages) {
+      console.warn(`[Image Check] AI generated only ${existingMatches.length} images out of ${expectedImages}. Appending missing placeholders.`);
+      for (let i = existingMatches.length; i < expectedImages; i++) {
+        finalMarkdown += `\n\n![Image ${i+1}]([GEMINI_IMAGE_PROMPT: ${resolvedImageApiPrompt || `detailed realistic photo about ${keyword}`} | ${config.aspectRatio || '16:9'}])\n\n`;
+      }
+    }
+
+    const imageRegex = new RegExp(IMAGE_MARKER_REGEX.source, 'g');
     const matches = [...finalMarkdown.matchAll(imageRegex)];
 
     if (matches.length > 0) {
@@ -763,9 +813,9 @@ Output the article in Markdown format. Use proper heading tags (H1, H2, H3), bul
           }
         }
 
-        const imagePrompt = match[1].trim();
-        let ar = match[2].trim();
-        if (!["1:1", "16:9", "4:3", "3:4", "9:16"].includes(ar)) ar = "1:1";
+        const parsed = parseImageMatch(match[1], match[2], config.aspectRatio || '1:1');
+        const imagePrompt = parsed.prompt;
+        const ar = parsed.ar;
 
         try {
           replacements[i] = await scheduleImage(() => generateSingleImage(i, imagePrompt, ar, config, resolvedImageApiPrompt));
