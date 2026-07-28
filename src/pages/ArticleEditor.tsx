@@ -1016,6 +1016,13 @@ export default function ArticleEditor() {
             loadedArticle.cover_image = match[1];
             // Remove the cover image from the content so it doesn't show in the WYSIWYG body
             loadedArticle.content = loadedArticle.content.replace(imageRegex, '').trimStart();
+          } else {
+            // Fallback: If AI used a different Alt text, grab the first image if it's at the top of the article
+            const anyImageMatch = loadedArticle.content.match(/!\[.*?\]\((.*?)\)/);
+            if (anyImageMatch && loadedArticle.content.indexOf(anyImageMatch[0]) < 500) {
+              loadedArticle.cover_image = anyImageMatch[1];
+              loadedArticle.content = loadedArticle.content.replace(anyImageMatch[0], '').trimStart();
+            }
           }
         }
         
