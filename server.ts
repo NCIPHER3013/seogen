@@ -955,11 +955,8 @@ export async function createApp() {
   return app;
 }
 
-// Only start the server if this file is run directly (not imported as a module by Netlify)
-import { fileURLToPath } from 'url';
-const isMainModule = typeof process !== 'undefined' && process.argv[1] === fileURLToPath(import.meta.url);
-
-if (isMainModule) {
+// Only start the server if this file is run locally (not in Netlify functions)
+if (!process.env.NETLIFY) {
   createApp().then(app => {
     const PORT = Number(process.env.PORT) || 3000;
     app.listen(PORT, "0.0.0.0", () => {
