@@ -782,7 +782,15 @@ Output the article in Markdown format. Use proper heading tags (H1, H2, H3), bul
     const existingMatches = [...finalMarkdown.matchAll(new RegExp(IMAGE_MARKER_REGEX.source, 'g'))];
     if (existingMatches.length < expectedImages) {
       console.warn(`[Image Check] AI generated only ${existingMatches.length} images out of ${expectedImages}. Appending missing placeholders.`);
-      for (let i = existingMatches.length; i < expectedImages; i++) {
+      let missingCount = expectedImages - existingMatches.length;
+      
+      const firstImageIndex = finalMarkdown.indexOf('![');
+      if (config.coverToggle && missingCount > 0 && (firstImageIndex === -1 || firstImageIndex > 500)) {
+        finalMarkdown = `![Cover Image]([GEMINI_IMAGE_PROMPT: ${resolvedImageApiPrompt || `detailed realistic photo about ${keyword}`} | ${config.aspectRatio || '16:9'}])\n\n` + finalMarkdown;
+        missingCount--;
+      }
+
+      for (let i = 0; i < missingCount; i++) {
         finalMarkdown += `\n\n![Image ${i+1}]([GEMINI_IMAGE_PROMPT: ${resolvedImageApiPrompt || `detailed realistic photo about ${keyword}`} | ${config.aspectRatio || '16:9'}])\n\n`;
       }
     }
