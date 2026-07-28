@@ -164,13 +164,13 @@ export default function AppLayout({ children, user: initialUser }: AppLayoutProp
             strokeWidth="60"
             filter="url(#glow-heavy)"
             style={{ mixBlendMode: 'multiply' }}
-            d="M -100,800 C 300,700 400,300 800,400 C 1100,450 1300,100 1540,50"
+            d="M -100 800 C 300 700 400 300 800 400 C 1100 450 1300 100 1540 50"
             animate={{ 
               opacity: [0.5, 1, 0.5],
               d: [
-                "M -100,800 C 300,700 400,300 800,400 C 1100,450 1300,100 1540,50",
-                "M -100,750 C 350,650 350,350 750,450 C 1150,550 1250,50 1540,100",
-                "M -100,800 C 300,700 400,300 800,400 C 1100,450 1300,100 1540,50"
+                "M -100 800 C 300 700 400 300 800 400 C 1100 450 1300 100 1540 50",
+                "M -100 750 C 350 650 350 350 750 450 C 1150 550 1250 50 1540 100",
+                "M -100 800 C 300 700 400 300 800 400 C 1100 450 1300 100 1540 50"
               ]
             }}
             transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
@@ -183,13 +183,13 @@ export default function AppLayout({ children, user: initialUser }: AppLayoutProp
             strokeWidth="40"
             filter="url(#glow-soft)"
             style={{ mixBlendMode: 'multiply' }}
-            d="M -100,900 C 200,600 500,500 850,300 C 1150,150 1350,200 1540,-50"
+            d="M -100 900 C 200 600 500 500 850 300 C 1150 150 1350 200 1540 -50"
             animate={{ 
               opacity: [0.5, 0.8, 0.5],
               d: [
-                "M -100,900 C 200,600 500,500 850,300 C 1150,150 1350,200 1540,-50",
-                "M -100,950 C 250,550 450,550 800,250 C 1200,100 1300,250 1540,0",
-                "M -100,900 C 200,600 500,500 850,300 C 1150,150 1350,200 1540,-50"
+                "M -100 900 C 200 600 500 500 850 300 C 1150 150 1350 200 1540 -50",
+                "M -100 950 C 250 550 450 550 800 250 C 1200 100 1300 250 1540 0",
+                "M -100 900 C 200 600 500 500 850 300 C 1150 150 1350 200 1540 -50"
               ]
             }}
             transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
@@ -202,27 +202,27 @@ export default function AppLayout({ children, user: initialUser }: AppLayoutProp
             strokeWidth="30"
             filter="url(#glow-soft)"
             style={{ mixBlendMode: 'multiply' }}
-            d="M -100,600 C 350,750 600,150 1000,250 C 1300,300 1400,-50 1540,-100"
+            d="M -100 600 C 350 750 600 150 1000 250 C 1300 300 1400 -50 1540 -100"
             animate={{ 
               opacity: [0.3, 0.6, 0.3],
               d: [
-                "M -100,600 C 350,750 600,150 1000,250 C 1300,300 1400,-50 1540,-100",
-                "M -100,550 C 300,800 650,100 1050,300 C 1250,250 1450,-100 1540,-50",
-                "M -100,600 C 350,750 600,150 1000,250 C 1300,300 1400,-50 1540,-100"
+                "M -100 600 C 350 750 600 150 1000 250 C 1300 300 1400 -50 1540 -100",
+                "M -100 550 C 300 800 650 100 1050 300 C 1250 250 1450 -100 1540 -50",
+                "M -100 600 C 350 750 600 150 1000 250 C 1300 300 1400 -50 1540 -100"
               ]
             }}
             transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
           />
           
           {/* Subtle fill behind */}
-          <motion.path
-            fill="url(#smoke-grad1)"
-            opacity="0.1"
-            style={{ mixBlendMode: 'multiply' }}
-            d="M -100,900 C 200,600 500,500 850,300 C 1150,150 1350,200 1540,-50 L 1540,800 L -100,800 Z"
-            animate={{ opacity: [0.1, 0.2, 0.1] }}
-            transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}
-          />
+          <motion.g animate={{ opacity: [0.1, 0.2, 0.1] }} transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}>
+            <path
+              fill="url(#smoke-grad1)"
+              opacity="0.1"
+              style={{ mixBlendMode: 'multiply' }}
+              d="M -100 900 C 200 600 500 500 850 300 C 1150 150 1350 200 1540 -50 L 1540 800 L -100 800 Z"
+            />
+          </motion.g>
         </svg>
       </div>
 
