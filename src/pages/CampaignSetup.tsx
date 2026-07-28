@@ -1703,32 +1703,7 @@ export default function CampaignSetup() {
                         <span className="text-xs font-medium text-slate-400">
                           {new Date().toLocaleString('th-TH', { month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric' })}
                         </span>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="h-9 text-red-600 bg-red-50 hover:bg-red-100 hover:text-red-700 font-bold rounded-xl px-4 transition-all"
-                          onClick={() => {
-                            cancelledWorkersRef.current.add(queueItem.id);
-                            setInputs(prev => {
-                              if (prev.some(i => i.id === queueItem.id)) return prev;
-                              return [...prev, queueItem];
-                            });
-                            setGeneratingQueue(prev => prev.filter(q => q.id !== queueItem.id));
-                            setGeneratedArticles(prev => prev.filter(a => !a.id.startsWith(`temp_${queueItem.id}_`) && a.id !== `temp_${queueItem.id}`));
-                            setActiveTab("inputs");
-                            
-                            const toast = document.createElement('div');
-                            toast.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-white text-slate-900 rounded-full px-6 py-3 text-sm font-bold shadow-xl flex items-center gap-3 z-50 animate-in fade-in slide-in-from-bottom-4';
-                            toast.innerHTML = `<svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> ยกเลิกการสร้างและย้ายกลับไปหน้านำเข้าแล้ว`;
-                            document.body.appendChild(toast);
-                            setTimeout(() => {
-                              toast.classList.add('fade-out', 'slide-out-to-bottom-4');
-                              setTimeout(() => toast.remove(), 300);
-                            }, 3000);
-                          }}
-                        >
-                          <X className="w-4 h-4 mr-1.5" /> ยกเลิก
-                        </Button>
+
                       </div>
                     </div>
                     );
