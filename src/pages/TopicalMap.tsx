@@ -94,27 +94,27 @@ Content Brief for Child Content
 \`\`\`mermaid
 mindmap
   root((ชื่อแบรนด์))
-    Informational((Informational))
+    Informational(Informational)
       ความรู้เรื่อง 1
       ความรู้เรื่อง 2
       ... (เพิ่มให้ถึง 5-6 อัน)
-    Commercial((Commercial))
+    Commercial(Commercial)
       รีวิว 1
       เปรียบเทียบ 1
       ...
-    Navigational((Navigational))
+    Navigational(Navigational)
       ค้นหาแบรนด์ 1
       ติดต่อ 1
       ...
-    Transactional((Transactional))
+    Transactional(Transactional)
       โปรโมชั่น 1
       จองคิว 1
       ...
-    Local_SEO((Local_SEO))
+    Local_SEO(Local_SEO)
       บริการในพื้นที่ 1
       บริการใกล้ฉัน 1
       ...
-    FAQ_Support((FAQ_Support))
+    FAQ_Support(FAQ_Support)
       คำถามที่พบบ่อย 1
       ปัญหาการใช้งาน 1
       ...
@@ -136,8 +136,8 @@ const MermaidChart = ({ chart }: { chart: string }) => {
             securityLevel: 'loose',
             fontFamily: '"Prompt", "Kanit", sans-serif',
             mindmap: {
-              maxNodeWidth: 400,
-              padding: 100
+              maxNodeWidth: 350,
+              padding: 15
             }
           });
 
@@ -272,10 +272,10 @@ export default function TopicalMap() {
     setError('');
   };
 
-  const handleSaveProject = async (currentResult: string = result) => {
+  const handleSaveProject = async (currentResult: string = result, overrideProjectId?: string) => {
     if (!formData.projectName.trim()) {
       setError('กรุณาตั้งชื่อ Project ก่อนบันทึก');
-      return;
+      return null;
     }
     setIsSaving(true);
     setError('');
@@ -290,7 +290,8 @@ export default function TopicalMap() {
       result_text: currentResult
     };
 
-    const saved = await saveProject(payload, selectedProjectId === 'new' ? undefined : selectedProjectId);
+    const targetId = overrideProjectId !== undefined ? overrideProjectId : selectedProjectId;
+    const saved = await saveProject(payload, targetId === 'new' ? undefined : targetId);
     if (saved) {
       await loadProjects();
       setSelectedProjectId(saved.id);
@@ -298,6 +299,7 @@ export default function TopicalMap() {
       setError('บันทึกไม่สำเร็จ กรุณาลองใหม่');
     }
     setIsSaving(false);
+    return saved?.id;
   };
 
   const handleDeleteProject = async () => {
@@ -325,9 +327,11 @@ export default function TopicalMap() {
     setIsGenerating(true);
     setResult('');
     
+    let currentProjectId = selectedProjectId;
     // Auto-save initial state
-    if (selectedProjectId === 'new') {
-      await handleSaveProject('');
+    if (currentProjectId === 'new') {
+      const newId = await handleSaveProject('', 'new');
+      if (newId) currentProjectId = newId;
     }
 
     try {
@@ -404,7 +408,7 @@ export default function TopicalMap() {
         
         // Auto-save when done
         if (finalResult && !error) {
-           await handleSaveProject(finalResult);
+           await handleSaveProject(finalResult, currentProjectId);
         }
       }
     } catch (err: any) {
