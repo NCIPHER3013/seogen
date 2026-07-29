@@ -94,27 +94,27 @@ Content Brief for Child Content
 \`\`\`mermaid
 mindmap
   root((ชื่อแบรนด์))
-    Informational(Informational)
+    Informational((Informational))
       ความรู้เรื่อง 1
       ความรู้เรื่อง 2
       ... (เพิ่มให้ถึง 5-6 อัน)
-    Commercial(Commercial)
+    Commercial((Commercial))
       รีวิว 1
       เปรียบเทียบ 1
       ...
-    Navigational(Navigational)
+    Navigational((Navigational))
       ค้นหาแบรนด์ 1
       ติดต่อ 1
       ...
-    Transactional(Transactional)
+    Transactional((Transactional))
       โปรโมชั่น 1
       จองคิว 1
       ...
-    Local_SEO(Local_SEO)
+    Local_SEO((Local_SEO))
       บริการในพื้นที่ 1
       บริการใกล้ฉัน 1
       ...
-    FAQ_Support(FAQ_Support)
+    FAQ_Support((FAQ_Support))
       คำถามที่พบบ่อย 1
       ปัญหาการใช้งาน 1
       ...
