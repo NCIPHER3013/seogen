@@ -228,7 +228,7 @@ export default function AppLayout({ children, user: initialUser }: AppLayoutProp
           <div className="bg-emerald-100 p-1.5 md:p-2 rounded-xl text-emerald-600">
             <Sparkles className="w-4 h-4 md:w-5 md:h-5" />
           </div>
-          <span>Seo<span className="text-emerald-500 font-light ml-1">Cipher</span></span>
+          <span>CipherThe<span className="text-emerald-500 font-light">Seo</span></span>
         </Link>
 
         {/* Desktop Nav */}

@@ -99,7 +99,7 @@ export default function AuthPage() {
             <div className="relative flex items-center justify-center w-12 h-12 rounded-[1rem] bg-emerald-100 text-emerald-600">
               <Sparkles className="w-6 h-6" />
             </div>
-            <span className="text-3xl font-extrabold tracking-tight text-slate-800">Seo<span className="text-emerald-500 font-light">Cipher</span></span>
+            <span className="text-3xl font-extrabold tracking-tight text-slate-800">CipherThe<span className="text-emerald-500 font-light">Seo</span></span>
           </div>
           
           <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.6, delay: 0.2 }}>
@@ -139,7 +139,7 @@ export default function AuthPage() {
             
             <div className="flex lg:hidden items-center justify-center gap-2 font-bold text-3xl mb-8">
               <Sparkles className="w-8 h-8 text-emerald-500" />
-              <span className="text-slate-800">Seo<span className="text-emerald-500 font-light ml-1">Cipher</span></span>
+              <span className="text-slate-800">CipherThe<span className="text-emerald-500 font-light">Seo</span></span>
             </div>
             
             <h2 className="text-3xl font-extrabold text-slate-900 mb-2 tracking-tight">

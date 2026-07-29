@@ -100,7 +100,7 @@ export default function Dashboard() {
                 เริ่มต้นสร้างเนื้อหา <br/><span className="text-emerald-600">ให้เหนือกว่าคู่แข่ง</span>
               </h1>
               <p className="text-lg text-slate-500 max-w-lg mb-8">
-                เขียนบทความ SEO ที่ติดหน้าแรก Google ได้ง่ายๆ ภายในไม่กี่นาทีด้วยระบบ AI ของ SeoCipher
+                เขียนบทความ SEO ที่ติดหน้าแรก Google ได้ง่ายๆ ภายในไม่กี่นาทีด้วยระบบ AI ของ CipherTheSeo
               </p>
               
               <Link to="/campaign/new" className="inline-flex items-center justify-center bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl px-8 py-4 text-lg shadow-[0_0_30px_rgba(16,185,129,0.3)] hover:shadow-[0_0_40px_rgba(16,185,129,0.5)] transition-all hover:-translate-y-1 gap-3">

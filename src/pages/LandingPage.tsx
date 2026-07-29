@@ -132,7 +132,7 @@ export default function LandingPage() {
             <div className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-emerald-100 group-hover:scale-105 transition-transform duration-300">
               <Sparkles className="w-5 h-5 text-emerald-600" />
             </div>
-            <span className="text-xl font-bold text-slate-800 tracking-tight">Seo<span className="text-emerald-500 font-light ml-1">Cipher</span></span>
+            <span className="text-xl font-bold text-slate-800 tracking-tight">CipherThe<span className="text-emerald-500 font-light">Seo</span></span>
           </Link>
           <div className="flex items-center gap-4">
             {isLoggedIn ? (
