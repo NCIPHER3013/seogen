@@ -11,6 +11,7 @@ export default function AuthPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<'login' | 'signup' | 'magic'>('login');
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +44,11 @@ export default function AuthPage() {
 
     try {
       if (mode === 'signup') {
+        if (password !== confirmPassword) {
+          setError('รหัสผ่านทั้งสองช่องไม่ตรงกัน กรุณาตรวจสอบอีกครั้ง');
+          setLoading(false);
+          return;
+        }
         const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
         setMessage('Check your email for the confirmation link.');
@@ -183,6 +189,24 @@ export default function AuthPage() {
                       placeholder="••••••••" 
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
+                      className="pl-12 h-12 bg-slate-50/50 border-slate-200 text-slate-900 focus-visible:ring-emerald-500 rounded-2xl placeholder:text-slate-400 font-medium"
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+
+              {mode === 'signup' && (
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword" className="font-semibold text-slate-700">ยืนยันรหัสผ่าน (Confirm Password)</Label>
+                  <div className="relative">
+                    <Lock className="w-5 h-5 absolute left-4 top-3.5 text-slate-400" />
+                    <Input 
+                      id="confirmPassword" 
+                      type="password" 
+                      placeholder="••••••••" 
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
                       className="pl-12 h-12 bg-slate-50/50 border-slate-200 text-slate-900 focus-visible:ring-emerald-500 rounded-2xl placeholder:text-slate-400 font-medium"
                       required
                     />
